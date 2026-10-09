@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import us.bringardner.parley.io.IoUtils;
+
 /** Stream helpers used to read and write message bodies without loading them. */
 final class Streams {
 
@@ -12,11 +14,7 @@ final class Streams {
 	}
 
 	static void copy(InputStream in, OutputStream out) throws IOException {
-		byte[] buf = new byte[64 * 1024];
-		int n;
-		while ((n = in.read(buf)) > 0) {
-			out.write(buf, 0, n);
-		}
+		IoUtils.copy(in, out);
 	}
 
 	/** Writes through, turning every bare LF into CRLF. */
@@ -212,16 +210,6 @@ final class Streams {
 
 	/** An output stream whose close() doesn't close the stream it writes to. */
 	static OutputStream noClose(OutputStream out) {
-		return new FilterOutputStream(out) {
-			@Override
-			public void write(byte[] b, int off, int len) throws IOException {
-				out.write(b, off, len);
-			}
-
-			@Override
-			public void close() throws IOException {
-				flush();
-			}
-		};
+		return IoUtils.noClose(out);
 	}
 }

@@ -1,7 +1,6 @@
 package us.bringardner.parley.mail.store;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import us.bringardner.parley.io.IoUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -184,7 +183,7 @@ public final class Mailbox {
 				return;
 			}
 			FileSource tmp = dir.getChild(INDEX_TMP);
-			try (Writer w = new OutputStreamWriter(new BufferedOutputStream(tmp.getOutputStream(), 64 * 1024),
+			try (Writer w = new OutputStreamWriter(IoUtils.buffered(tmp.getOutputStream()),
 					StandardCharsets.UTF_8)) {
 				w.write(HEADER + "\n");
 				w.write("UIDVALIDITY\t" + uidValidity + "\n");
@@ -431,8 +430,8 @@ public final class Mailbox {
 		Scan s = Scan.of(file);
 		if (s.needsCrlf) {
 			FileSource tmp = dir.getChild(".crlf-" + file.getName());
-			try (InputStream in = new BufferedInputStream(file.getInputStream(), 64 * 1024);
-					OutputStream out = new CrlfOutputStream(new BufferedOutputStream(tmp.getOutputStream(), 64 * 1024))) {
+			try (InputStream in = IoUtils.buffered(file.getInputStream());
+					OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
 				in.transferTo(out);
 			}
 			if (!file.delete() || !tmp.renameTo(file)) {
@@ -467,7 +466,7 @@ public final class Mailbox {
 		static Scan of(FileSource f) throws IOException {
 			Scan s = new Scan();
 			int prev = '\n';
-			try (InputStream in = new BufferedInputStream(f.getInputStream(), 64 * 1024)) {
+			try (InputStream in = IoUtils.buffered(f.getInputStream())) {
 				byte[] buf = new byte[64 * 1024];
 				int n;
 				while ((n = in.read(buf)) > 0) {
@@ -554,7 +553,7 @@ public final class Mailbox {
 		checkUsable();
 		String name = newName();
 		FileSource tmp = dir.getChild("." + name + ".tmp");
-		try (OutputStream out = new CrlfOutputStream(new BufferedOutputStream(tmp.getOutputStream(), 64 * 1024))) {
+		try (OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
 			content.transferTo(out);
 		} catch (IOException | RuntimeException e) {
 			tmp.delete();
@@ -788,7 +787,7 @@ public final class Mailbox {
 				Message msg = Message.parse(m.getFile());
 				Downgrader.downgrade(msg);
 				FileSource tmp = cacheDir.getChild(m.getUid() + ".tmp");
-				try (OutputStream out = new BufferedOutputStream(tmp.getOutputStream(), 64 * 1024)) {
+				try (OutputStream out = IoUtils.buffered(tmp.getOutputStream())) {
 					msg.writeTo(out);
 				}
 				if (!tmp.renameTo(f)) {

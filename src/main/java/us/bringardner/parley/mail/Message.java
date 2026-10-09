@@ -1,6 +1,6 @@
 package us.bringardner.parley.mail;
 
-import java.io.BufferedOutputStream;
+import us.bringardner.parley.io.IoUtils;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -1527,7 +1527,7 @@ public class Message implements Serializable, AutoCloseable {
 	}
 
 	private static OutputStream output(FileSource f) throws IOException {
-		return new BufferedOutputStream(f.getOutputStream(), 64 * 1024);
+		return IoUtils.buffered(f.getOutputStream());
 	}
 
 	// ------------------------------------------------------------------ as parsed

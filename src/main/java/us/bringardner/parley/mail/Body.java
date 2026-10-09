@@ -1,6 +1,6 @@
 package us.bringardner.parley.mail;
 
-import java.io.BufferedInputStream;
+import us.bringardner.parley.io.IoUtils;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -119,7 +119,7 @@ abstract class Body implements Serializable {
 		InputStream open(long offset) throws IOException {
 			long o = Math.min(offset, len);
 			// buffered: decoders such as Base64's read one byte at a time
-			return new Bounded(new BufferedInputStream(file.getInputStream(off + o), 64 * 1024), len - o);
+			return new Bounded(IoUtils.buffered(file.getInputStream(off + o)), len - o);
 		}
 
 		@Override
