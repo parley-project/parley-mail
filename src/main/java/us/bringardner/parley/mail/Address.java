@@ -46,6 +46,7 @@ public class Address implements Serializable {
 	private static final long serialVersionUID = 1L;
 	
 	static String rx = "(?<user>[a-zA-Z0-9._%+-]+)@(?<domain>[a-zA-Z0-9.-]+)";
+	private static final Pattern RX_PATTERN = Pattern.compile(rx);
 	
 	
 	public static Address parseAddress(String addressText) {
@@ -255,7 +256,6 @@ public class Address implements Serializable {
 		Address ret = new Address();
 		String addressText = addressText1;
 		
-		String myrx=rx;
 		int idx = addressText.indexOf('<');
 		if( idx >= 0 ) {
 			String tmp = addressText.substring(0,idx).trim();
@@ -269,8 +269,7 @@ public class Address implements Serializable {
 			}
 		}
 		
-		Pattern p = Pattern.compile(myrx);
-		Matcher m = p.matcher(addressText);
+		Matcher m = RX_PATTERN.matcher(addressText);
 	
 		if(m.matches()) {
 			ret.user = m.group("user");
