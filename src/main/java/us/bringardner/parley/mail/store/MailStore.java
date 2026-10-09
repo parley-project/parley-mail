@@ -1,5 +1,6 @@
 package us.bringardner.parley.mail.store;
 
+import us.bringardner.parley.core.util.Hex;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -182,7 +183,8 @@ public final class MailStore {
 			} else if (c == '_') {
 				b.append("__");
 			} else {
-				b.append('%').append(String.format("%02X", c));
+				b.append('%');
+				Hex.appendUpper(b, c);
 			}
 		}
 		return b.toString();
