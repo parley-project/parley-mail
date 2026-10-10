@@ -6,7 +6,6 @@ import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PushbackInputStream;
 import java.io.UncheckedIOException;
 
 /**
@@ -175,15 +174,33 @@ public final class QuotedPrintable {
 		/** A whitespace run longer than this can't be trailing whitespace of a valid line. */
 		private static final int MAX_WS = 4096;
 
-		private final PushbackInputStream in;
-		private final ByteArrayOutputStream ws = new ByteArrayOutputStream();
-		private final byte[] queue = new byte[MAX_WS + 4];
+		/** Decode about this much per fill() when the input has it ready. */
+		private static final int FILL_TARGET = 4096;
+		/** What one pass of the loop in fill() can add: a whitespace run, then a couple of bytes. */
+		private static final int MAX_PASS = MAX_WS + 4;
+
+		private final InputStream in;
+		/** Our own input buffer: a call per byte on a wrapper stream was most of the time. */
+		private final byte[] ibuf = new byte[8192];
+		private int iPos;
+		private int iLen;
+		/** Bytes given back by back(); at most the 3 the decoder ever looks ahead. */
+		private final int[] pushed = new int[4];
+		private int pushedCount;
+		/** Whitespace seen since the last other byte: it is dropped before a line end, kept otherwise. */
+		private final byte[] ws = new byte[MAX_WS];
+		private int wsLen;
+		private final byte[] queue = new byte[FILL_TARGET + MAX_PASS];
+		/** Whitespace skipped after a '=' (a soft break may be followed by it), reused. */
+		private final byte[] skippedWs = new byte[76];
+		/** Bytes taken from in so far; fill() compares it with what in had ready. */
+		private long consumed;
 		private int qPos;
 		private int qLen;
 		private boolean eof;
 
 		Decoder(InputStream in) {
-			this.in = new PushbackInputStream(in, 3);
+			this.in = in;
 		}
 
 		@Override
@@ -205,7 +222,7 @@ public final class QuotedPrintable {
 			int n = 0;
 			while (n < len) {
 				if (qPos >= qLen) {
-					if (eof || (n > 0 && in.available() <= 0)) {
+					if (eof || (n > 0 && ready() <= 0)) {
 						break;
 					}
 					fill();
@@ -225,44 +242,79 @@ public final class QuotedPrintable {
 
 		/** Pending literal whitespace is real content (something follows it on the line). */
 		private void flushWs() {
-			byte[] w = ws.toByteArray();
-			System.arraycopy(w, 0, queue, qLen, w.length);
-			qLen += w.length;
-			ws.reset();
+			if (wsLen == 0) {
+				return;
+			}
+			System.arraycopy(ws, 0, queue, qLen, wsLen);
+			qLen += wsLen;
+			wsLen = 0;
 		}
 
-		/** Decode until at least one byte is queued or the input ends. */
+		private int next() throws IOException {
+			consumed++;
+			if( pushedCount > 0 ) {
+				return pushed[--pushedCount];
+			}
+			if( iPos >= iLen ) {
+				int n = in.read(ibuf, 0, ibuf.length);
+				if( n <= 0 ) {
+					consumed--;
+					return -1;
+				}
+				iPos = 0;
+				iLen = n;
+			}
+			return ibuf[iPos++] & 0xff;
+		}
+
+		private void back(int b) {
+			consumed--;
+			pushed[pushedCount++] = b;
+		}
+
+		/** Bytes that can be taken without waiting for the source (a guess for sources that can't say). */
+		private int ready() throws IOException {
+			return pushedCount + (iLen - iPos) + in.available();
+		}
+
+		/**
+		 * Decode until at least one byte is queued or the input ends, and on while the input
+		 * has more ready (it never waits for input once there is something to return). A call
+		 * used to produce a byte or two, and the reader asked in.available() after each.
+		 */
 		private void fill() throws IOException {
 			qPos = 0;
 			qLen = 0;
-			while (qLen == 0) {
-				int b = in.read();
+			// what can be read without blocking, less what one pass may look ahead
+			long limit = consumed + Math.max(0, ready() - 4);
+			while (qLen == 0 || (qLen < FILL_TARGET && consumed < limit)) {
+				int b = next();
 				if (b < 0) {
-					ws.reset(); // trailing whitespace at the end is removed
+					wsLen = 0; // trailing whitespace at the end is removed
 					eof = true;
 					return;
 				}
 				if (b == '=') {
 					decodeEquals();
 				} else if (b == '\r') {
-					int d = in.read();
+					int d = next();
 					if (d == '\n') {
-						ws.reset(); // trailing whitespace before a line break is removed
+						wsLen = 0; // trailing whitespace before a line break is removed
 						put('\r');
 						put('\n');
 					} else {
 						if (d >= 0) {
-							in.unread(d);
+							back(d);
 						}
 						flushWs();
 						put('\r');
 					}
 				} else if (b == '\n') {
-					ws.reset();
+					wsLen = 0;
 					put('\n');
 				} else if (b == ' ' || b == '\t') {
-					ws.write(b);
-					if (ws.size() >= MAX_WS) {
+					ws[wsLen++] = (byte) b;
+					if (wsLen >= MAX_WS) {
 						flushWs();
 					}
 				} else {
@@ -274,13 +326,12 @@ public final class QuotedPrintable {
 
 		private void decodeEquals() throws IOException {
 			flushWs(); // whitespace before '=' is content
-			int c = in.read();
+			int c = next();
 			// soft line break: '=' then optional whitespace then line end (or end of data)
 			int skipped = 0;
-			byte[] skippedWs = new byte[76];
 			while ((c == ' ' || c == '\t') && skipped < skippedWs.length) {
 				skippedWs[skipped++] = (byte) c;
-				c = in.read();
+				c = next();
 			}
 			if (c < 0) {
 				return; // soft break at the end of the data
@@ -289,35 +340,36 @@ public final class QuotedPrintable {
 				return;
 			}
 			if (c == '\r') {
-				int d = in.read();
+				int d = next();
 				if (d == '\n') {
 					return;
 				}
 				if (d >= 0) {
-					in.unread(d);
+					back(d);
 				}
 			}
 			if (skipped == 0) {
 				int h1 = MimeHeaderValue.hex((char) c);
 				if (h1 >= 0) {
-					int d = in.read();
+					int d = next();
 					int h2 = d < 0 ? -1 : MimeHeaderValue.hex((char) d);
 					if (h2 >= 0) {
 						put(h1 * 16 + h2);
 						return;
 					}
 					if (d >= 0) {
-						in.unread(d);
+						back(d);
 					}
 				}
-				in.unread(c);
+				back(c);
 				put('=');
 				return;
 			}
 			// '=' followed by whitespace and then other text: keep it all literally
-			in.unread(c);
+			back(c);
 			put('=');
-			ws.write(skippedWs, 0, skipped);
+			System.arraycopy(skippedWs, 0, ws, wsLen, skipped);
+			wsLen += skipped;
 		}
 
 		@Override
