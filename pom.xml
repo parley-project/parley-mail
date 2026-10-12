@@ -49,6 +49,10 @@
 						<!-- Small heap on purpose: TestLargeMessage handles a 150 MB attachment,
 						     which only passes if Message keeps bodies out of memory. -->
 						<argLine>-Xmx64m</argLine>
+						<!-- ...and writes about 1 GB of temp files: keep them with the build, not in a small /tmp -->
+						<systemPropertyVariables>
+							<java.io.tmpdir>${project.build.directory}</java.io.tmpdir>
+						</systemPropertyVariables>
 					</configuration>
 				</plugin>
 			</plugins>
