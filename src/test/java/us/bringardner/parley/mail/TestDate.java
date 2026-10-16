@@ -1,13 +1,12 @@
 package us.bringardner.parley.mail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,11 +68,10 @@ public class TestDate  {
 
 	@Test()
 	public void testDate03() throws ParseException, FileNotFoundException, IOException {
-		File dir = new File("TestFiles").getAbsoluteFile();
-		File file = new File(dir,"Date.txt");
 		String text = null;
 
-		try(InputStream in = new FileInputStream(file)) {
+		try(InputStream in = TestDate.class.getResourceAsStream("/TestFiles/Date.txt")) {
+			assertNotNull(in, "TestFiles/Date.txt is not on the test class path (src/test/resources)");
 			text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 		}
 		SimpleDateFormat fmt = new SimpleDateFormat(PATTERN, Locale.US);

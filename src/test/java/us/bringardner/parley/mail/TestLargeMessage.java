@@ -95,73 +95,75 @@ public class TestLargeMessage {
 		byte[] digest = writeRandom(data, BIG, 42);
 
 		// build: the attachment is base64-encoded as a stream into a temp file in the work directory
-		Message m = new Message().setWorkDirectory(dir);
-		m.setFrom(new Address("Tony", "tony", "bringardner.us"));
-		m.setTo(new Address("john", "example.com"));
-		m.setSubject("Big attachment");
-		m.setText("See the attached file.\n");
-		Message att = m.addAttachment("big.bin", "application/octet-stream", data);
-		assertEquals("base64", att.getTransferEncoding());
-		assertTrue(att.getBodyLength() > BIG * 4 / 3, "encoded size " + att.getBodyLength());
-		int withTemp = fileCount();
+		try (Message m = new Message()) {
+			m.setWorkDirectory(dir);
+			m.setFrom(new Address("Tony", "tony", "bringardner.us"));
+			m.setTo(new Address("john", "example.com"));
+			m.setSubject("Big attachment");
+			m.setText("See the attached file.\n");
+			Message att = m.addAttachment("big.bin", "application/octet-stream", data);
+			assertEquals("base64", att.getTransferEncoding());
+			assertTrue(att.getBodyLength() > BIG * 4 / 3, "encoded size " + att.getBodyLength());
+			int withTemp = fileCount();
 
-		FileSource msgFile = dir.getChild("message.eml");
-		m.writeTo(msgFile);
-		m.close();
-		// big.bin, the encoded temp file and message.eml -> close() deletes the temp file
-		assertEquals(withTemp + 1, 3);
-		assertEquals(2, fileCount(), "close() deletes the encoded temp file");
+			FileSource msgFile = dir.getChild("message.eml");
+			m.writeTo(msgFile);
+			m.close();
+			// big.bin, the encoded temp file and message.eml -> close() deletes the temp file
+			assertEquals(withTemp + 1, 3);
+			assertEquals(2, fileCount(), "close() deletes the encoded temp file");
 
-		// parse the stored message in place
-		Message p = Message.parse(msgFile);
-		assertEquals("Big attachment", p.getSubject());
-		assertEquals(2, p.getParts().size());
-		assertEquals("See the attached file.\r\n", p.getParts().get(0).getText());
-		Message bin = p.getAttachments().get(0);
-		assertEquals("big.bin", bin.getFilename());
-		assertArrayEquals(digest, sha256(bin.openContent()));
+			// parse the stored message in place
+			Message p = Message.parse(msgFile);
+			assertEquals("Big attachment", p.getSubject());
+			assertEquals(2, p.getParts().size());
+			assertEquals("See the attached file.\r\n", p.getParts().get(0).getText());
+			Message bin = p.getAttachments().get(0);
+			assertEquals("big.bin", bin.getFilename());
+			assertArrayEquals(digest, sha256(bin.openContent()));
 
-		FileSource saved = dir.getChild("saved.bin");
-		bin.saveContent(saved);
-		assertEquals(BIG, saved.length());
-		assertArrayEquals(digest, sha256(saved));
+			FileSource saved = dir.getChild("saved.bin");
+			bin.saveContent(saved);
+			assertEquals(BIG, saved.length());
+			assertArrayEquals(digest, sha256(saved));
 
-		// unchanged: written back byte for byte
-		FileSource copy = dir.getChild("copy.eml");
-		p.writeTo(copy);
-		assertEquals(msgFile.length(), copy.length());
-		assertArrayEquals(sha256(msgFile), sha256(copy));
+			// unchanged: written back byte for byte
+			FileSource copy = dir.getChild("copy.eml");
+			p.writeTo(copy);
+			assertEquals(msgFile.length(), copy.length());
+			assertArrayEquals(sha256(msgFile), sha256(copy));
 
-		// change a header and write back over the file the message is read from
-		p.setSubject("Big attachment (updated)");
-		p.addHeader("X-Stored", "yes");
-		p.writeTo(msgFile);
-		assertEquals("Big attachment (updated)", p.getSubject());
-		Message again = Message.parse(msgFile);
-		assertEquals("Big attachment (updated)", again.getSubject());
-		assertEquals("yes", again.getHeader("X-Stored"));
-		assertArrayEquals(digest, sha256(again.getAttachments().get(0).openContent()));
-		// p was re-read from the new file and still works
-		assertArrayEquals(digest, sha256(p.getAttachments().get(0).openContent()));
+			// change a header and write back over the file the message is read from
+			p.setSubject("Big attachment (updated)");
+			p.addHeader("X-Stored", "yes");
+			p.writeTo(msgFile);
+			assertEquals("Big attachment (updated)", p.getSubject());
+			Message again = Message.parse(msgFile);
+			assertEquals("Big attachment (updated)", again.getSubject());
+			assertEquals("yes", again.getHeader("X-Stored"));
+			assertArrayEquals(digest, sha256(again.getAttachments().get(0).openContent()));
+			// p was re-read from the new file and still works
+			assertArrayEquals(digest, sha256(p.getAttachments().get(0).openContent()));
 
-		// read from a stream: stored in a temp file the message owns
-		int before = fileCount();
-		Message fromStream = Message.read(msgFile.getInputStream(), dir.getChild("stored.eml"));
-		assertEquals(before + 1, fileCount());
-		assertEquals(2, fromStream.getParts().size());
-		fromStream.close();
-		assertEquals(before + 1, fileCount(), "a store file given by the caller is not deleted");
-
-		Message.setDefaultWorkDirectory(dir);
-		try {
-			before = fileCount();
-			Message owned = Message.read(msgFile.getInputStream());
+			// read from a stream: stored in a temp file the message owns
+			int before = fileCount();
+			Message fromStream = Message.read(msgFile.getInputStream(), dir.getChild("stored.eml"));
 			assertEquals(before + 1, fileCount());
-			assertArrayEquals(digest, sha256(owned.getAttachments().get(0).openContent()));
-			owned.close();
-			assertEquals(before, fileCount(), "close() deletes the temp copy");
-		} finally {
-			Message.setDefaultWorkDirectory(null);
+			assertEquals(2, fromStream.getParts().size());
+			fromStream.close();
+			assertEquals(before + 1, fileCount(), "a store file given by the caller is not deleted");
+
+			Message.setDefaultWorkDirectory(dir);
+			try {
+				before = fileCount();
+				Message owned = Message.read(msgFile.getInputStream());
+				assertEquals(before + 1, fileCount());
+				assertArrayEquals(digest, sha256(owned.getAttachments().get(0).openContent()));
+				owned.close();
+				assertEquals(before, fileCount(), "close() deletes the temp copy");
+			} finally {
+				Message.setDefaultWorkDirectory(null);
+			}
 		}
 	}
 
@@ -210,21 +212,25 @@ public class TestLargeMessage {
 		try (OutputStream out = text.getOutputStream()) {
 			out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
 		}
-		Message m = new Message().setWorkDirectory(dir);
-		Message part = m.addAttachment("notes.txt", "text/plain; charset=UTF-8", text);
-		assertEquals("quoted-printable", part.getTransferEncoding());
-		Message back = Message.parse(m.toByteArray());
-		assertEquals(sb.toString().replace("\n", "\r\n"), back.getAttachments().get(0).getText());
+		try (Message m = new Message()) {
+			m.setWorkDirectory(dir);
+			Message part = m.addAttachment("notes.txt", "text/plain; charset=UTF-8", text);
+			assertEquals("quoted-printable", part.getTransferEncoding());
+			Message back = Message.parse(m.toByteArray());
+			assertEquals(sb.toString().replace("\n", "\r\n"), back.getAttachments().get(0).getText());
 
-		FileSource ascii = dir.getChild("ascii.txt");
-		try (OutputStream out = ascii.getOutputStream()) {
-			out.write("line one\nline two\r\nline three".getBytes(StandardCharsets.US_ASCII));
+			FileSource ascii = dir.getChild("ascii.txt");
+			try (OutputStream out = ascii.getOutputStream()) {
+				out.write("line one\nline two\r\nline three".getBytes(StandardCharsets.US_ASCII));
+			}
+			try (Message a = new Message()) {
+				a.setWorkDirectory(dir).setContent(ascii, "text/plain");
+				assertEquals("7bit", a.getTransferEncoding());
+				assertEquals("line one\r\nline two\r\nline three", a.getText());
+				m.close();
+				a.close();
+			}
 		}
-		Message a = new Message().setWorkDirectory(dir).setContent(ascii, "text/plain");
-		assertEquals("7bit", a.getTransferEncoding());
-		assertEquals("line one\r\nline two\r\nline three", a.getText());
-		m.close();
-		a.close();
 	}
 
 	@Test

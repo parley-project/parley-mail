@@ -172,7 +172,9 @@ public class TestQuotedPrintableDecoder {
 		long total = 0;
 		for(int round = 0; round < 3; round++) {
 			long t0 = System.nanoTime();
-			total = readAll(QuotedPrintable.decoder(new ByteArrayInputStream(data)), 1, 0).length;
+			try (java.io.InputStream in = QuotedPrintable.decoder(new ByteArrayInputStream(data))) {
+				total = readAll(in, 1, 0).length;
+			}
 			best = Math.min(best, System.nanoTime() - t0);
 		}
 		double mbPerSecond = (data.length / 1048576.0) / (best / 1e9);

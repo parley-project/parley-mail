@@ -155,63 +155,64 @@ public class TestMessage {
 		new Random(1).nextBytes(pdf);
 		String longName = "Quarterly résumé of the Bringardner Java Library — very long file name 日本語.pdf";
 
-		Message m = new Message();
-		m.setFrom(new Address("Tony Bringardner", "tony", "bringardner.us"));
-		m.setTo(new Address("Smith, John", "john", "example.com"), new Address("José Núñez", "jose", "example.com"));
-		m.setSubject("Grüße — a subject long enough that it has to be folded across several header lines 日本語");
-		m.setDate(Rfc2822Date.parseDate("Fri, 16 Jan 2026 07:54:55 -0500"));
-		m.setMessageId("<1@bringardner.us>");
-		m.setText("Héllo,\nthe report is attached.\n");
-		Message att = m.addAttachment(longName, "application/pdf", pdf);
-		m.addAttachment("notes.txt", "text/plain; charset=UTF-8", "plain notes\n".getBytes(StandardCharsets.UTF_8));
+		try (Message m = new Message()) {
+			m.setFrom(new Address("Tony Bringardner", "tony", "bringardner.us"));
+			m.setTo(new Address("Smith, John", "john", "example.com"), new Address("José Núñez", "jose", "example.com"));
+			m.setSubject("Grüße — a subject long enough that it has to be folded across several header lines 日本語");
+			m.setDate(Rfc2822Date.parseDate("Fri, 16 Jan 2026 07:54:55 -0500"));
+			m.setMessageId("<1@bringardner.us>");
+			m.setText("Héllo,\nthe report is attached.\n");
+			Message att = m.addAttachment(longName, "application/pdf", pdf);
+			m.addAttachment("notes.txt", "text/plain; charset=UTF-8", "plain notes\n".getBytes(StandardCharsets.UTF_8));
 
-		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		m.writeTo(out);
-		byte[] written = out.toByteArray();
-		String text = new String(written, StandardCharsets.ISO_8859_1);
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
+			m.writeTo(out);
+			byte[] written = out.toByteArray();
+			String text = new String(written, StandardCharsets.ISO_8859_1);
 
-		// everything we generate is 7-bit ASCII with CRLF line endings and no long lines
-		for (byte b : written) {
-			assertTrue((b & 0xff) < 128, "non-ASCII byte in output");
+			// everything we generate is 7-bit ASCII with CRLF line endings and no long lines
+			for (byte b : written) {
+				assertTrue((b & 0xff) < 128, "non-ASCII byte in output");
+			}
+			assertFalse(text.replace("\r\n", "").contains("\n"), "bare LF in output");
+			assertFalse(text.replace("\r\n", "").contains("\r"), "bare CR in output");
+			String headerBlock = text.substring(0, text.indexOf("\r\n\r\n"));
+			for (String line : headerBlock.split("\r\n")) {
+				assertTrue(line.length() <= 78, line);
+			}
+			assertTrue(text.contains("filename*0*=UTF-8''"), "RFC 2231 continuation for the long file name");
+			assertEquals(1, count(text, "MIME-Version: 1.0"));
+			assertTrue(att.getHeader("MIME-Version") == null);
+
+			Message back = Message.parse(written);
+			assertEquals("Grüße — a subject long enough that it has to be folded across several header lines 日本語", back.getSubject());
+			assertEquals("Fri, 16 Jan 2026 07:54:55 -0500", back.getDate().toString());
+			assertEquals("Tony Bringardner", back.getFrom().get(0).getDisplayName());
+			assertEquals(2, back.getTo().size());
+			assertEquals("Smith, John", back.getTo().get(0).getDisplayName());
+			assertEquals("José Núñez", back.getTo().get(1).getDisplayName());
+			assertEquals("multipart/mixed", back.getMimeType());
+			assertEquals(3, back.getParts().size());
+
+			Message body = back.getParts().get(0);
+			assertEquals("Héllo,\r\nthe report is attached.\r\n", body.getText());
+			assertEquals("quoted-printable", body.getTransferEncoding());
+			assertFalse(body.isAttachment());
+
+			Message pdfPart = back.getParts().get(1);
+			assertEquals(longName, pdfPart.getFilename());
+			assertEquals(longName, pdfPart.getContentType().getParameter("name"));
+			assertEquals("base64", pdfPart.getTransferEncoding());
+			assertArrayEquals(pdf, pdfPart.getContent());
+
+			Message notes = back.getParts().get(2);
+			assertEquals("7bit", notes.getTransferEncoding());
+			assertEquals("plain notes\r\n", notes.getText());
+			assertEquals(2, back.getAttachments().size());
+
+			// written again unchanged: identical
+			assertArrayEquals(written, back.toByteArray());
 		}
-		assertFalse(text.replace("\r\n", "").contains("\n"), "bare LF in output");
-		assertFalse(text.replace("\r\n", "").contains("\r"), "bare CR in output");
-		String headerBlock = text.substring(0, text.indexOf("\r\n\r\n"));
-		for (String line : headerBlock.split("\r\n")) {
-			assertTrue(line.length() <= 78, line);
-		}
-		assertTrue(text.contains("filename*0*=UTF-8''"), "RFC 2231 continuation for the long file name");
-		assertEquals(1, count(text, "MIME-Version: 1.0"));
-		assertTrue(att.getHeader("MIME-Version") == null);
-
-		Message back = Message.parse(written);
-		assertEquals("Grüße — a subject long enough that it has to be folded across several header lines 日本語", back.getSubject());
-		assertEquals("Fri, 16 Jan 2026 07:54:55 -0500", back.getDate().toString());
-		assertEquals("Tony Bringardner", back.getFrom().get(0).getDisplayName());
-		assertEquals(2, back.getTo().size());
-		assertEquals("Smith, John", back.getTo().get(0).getDisplayName());
-		assertEquals("José Núñez", back.getTo().get(1).getDisplayName());
-		assertEquals("multipart/mixed", back.getMimeType());
-		assertEquals(3, back.getParts().size());
-
-		Message body = back.getParts().get(0);
-		assertEquals("Héllo,\r\nthe report is attached.\r\n", body.getText());
-		assertEquals("quoted-printable", body.getTransferEncoding());
-		assertFalse(body.isAttachment());
-
-		Message pdfPart = back.getParts().get(1);
-		assertEquals(longName, pdfPart.getFilename());
-		assertEquals(longName, pdfPart.getContentType().getParameter("name"));
-		assertEquals("base64", pdfPart.getTransferEncoding());
-		assertArrayEquals(pdf, pdfPart.getContent());
-
-		Message notes = back.getParts().get(2);
-		assertEquals("7bit", notes.getTransferEncoding());
-		assertEquals("plain notes\r\n", notes.getText());
-		assertEquals(2, back.getAttachments().size());
-
-		// written again unchanged: identical
-		assertArrayEquals(written, back.toByteArray());
 	}
 
 	@Test
@@ -232,14 +233,15 @@ public class TestMessage {
 	}
 
 	@Test
-	public void testAttachmentToEmptyMessage() {
-		Message m = new Message();
-		m.setSubject("only an attachment");
-		m.addAttachment("a.txt", "text/plain", "abc".getBytes(StandardCharsets.US_ASCII));
-		assertEquals(1, m.getParts().size());
-		Message back = Message.parse(m.toByteArray());
-		assertEquals(1, back.getParts().size());
-		assertEquals("a.txt", back.getParts().get(0).getFilename());
+	public void testAttachmentToEmptyMessage() throws IOException {
+		try (Message m = new Message()) {
+			m.setSubject("only an attachment");
+			m.addAttachment("a.txt", "text/plain", "abc".getBytes(StandardCharsets.US_ASCII));
+			assertEquals(1, m.getParts().size());
+			Message back = Message.parse(m.toByteArray());
+			assertEquals(1, back.getParts().size());
+			assertEquals("a.txt", back.getParts().get(0).getFilename());
+		}
 	}
 
 	@Test
@@ -322,15 +324,17 @@ public class TestMessage {
 	}
 
 	@Test
-	public void testSetTextAscii() {
-		Message m = new Message().setText("plain\nascii");
-		assertEquals("7bit", m.getTransferEncoding());
-		assertEquals("us-ascii", m.getContentType().getParameter("charset"));
-		assertEquals("plain\r\nascii", str(m.getBody()));
-		m.setText("<b>x</b>", "html");
-		assertEquals("text/html", m.getMimeType());
-		// setText again doesn't duplicate MIME-Version
-		assertEquals(1, m.getHeaders("MIME-Version").size());
+	public void testSetTextAscii() throws IOException {
+		try (Message m = new Message()) {
+			m.setText("plain\nascii");
+			assertEquals("7bit", m.getTransferEncoding());
+			assertEquals("us-ascii", m.getContentType().getParameter("charset"));
+			assertEquals("plain\r\nascii", str(m.getBody()));
+			m.setText("<b>x</b>", "html");
+			assertEquals("text/html", m.getMimeType());
+			// setText again doesn't duplicate MIME-Version
+			assertEquals(1, m.getHeaders("MIME-Version").size());
+		}
 	}
 
 	@Test

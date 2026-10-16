@@ -15,8 +15,6 @@ import us.bringardner.parley.net.server.Server;
  */
 public abstract class AbstractMailServer extends Server {
 
-	private static final long serialVersionUID = 1L;
-
 	private FileSource maildropRoot;
 	private FileSourceFactory factory = FileSourceFactory.getDefaultFactory();
 	private volatile int autologout;

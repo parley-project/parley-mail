@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.Base64;
@@ -111,85 +112,93 @@ public class TestUtf8Headers {
 	}
 
 	@Test
-	public void testUtf8ModeWritesRawUtf8() {
-		Message m = new Message().setUtf8Headers(true);
-		m.setFrom(new Address("José Núñez", "josé", "exämple.com"));
-		m.setTo(new Address("Smith, John", "john", "example.com"));
-		m.setSubject("Grüße 日本語");
-		m.setText("x");
-		m.addAttachment("résumé.pdf", "application/pdf", new byte[] {1});
-		m.addAttachment("report.txt", "text/plain", new byte[] {'a'}).setContentDisposition(
-				new MimeHeaderValue("attachment").setParameter("filename", "report.txt", "en"));
+	public void testUtf8ModeWritesRawUtf8() throws IOException {
+		try (Message m = new Message()) {
+			m.setUtf8Headers(true);
+			m.setFrom(new Address("José Núñez", "josé", "exämple.com"));
+			m.setTo(new Address("Smith, John", "john", "example.com"));
+			m.setSubject("Grüße 日本語");
+			m.setText("x");
+			m.addAttachment("résumé.pdf", "application/pdf", new byte[] {1});
+			m.addAttachment("report.txt", "text/plain", new byte[] {'a'}).setContentDisposition(
+					new MimeHeaderValue("attachment").setParameter("filename", "report.txt", "en"));
 
-		String all = str(m.toByteArray());
-		String h = headerBlock(m);
-		assertTrue(h.contains("From: José Núñez <josé@exämple.com>"), h);
-		assertTrue(h.contains("To: \"Smith, John\" <john@example.com>"), h);
-		assertTrue(h.contains("Subject: Grüße 日本語"), h);
-		assertTrue(all.contains("filename=\"résumé.pdf\""), all);
-		// a language still needs RFC 2231
-		assertTrue(all.contains("filename*=UTF-8'en'report.txt"), all);
-		assertTrue(m.needsSmtpUtf8());
+			String all = str(m.toByteArray());
+			String h = headerBlock(m);
+			assertTrue(h.contains("From: José Núñez <josé@exämple.com>"), h);
+			assertTrue(h.contains("To: \"Smith, John\" <john@example.com>"), h);
+			assertTrue(h.contains("Subject: Grüße 日本語"), h);
+			assertTrue(all.contains("filename=\"résumé.pdf\""), all);
+			// a language still needs RFC 2231
+			assertTrue(all.contains("filename*=UTF-8'en'report.txt"), all);
+			assertTrue(m.needsSmtpUtf8());
 
-		Message back = Message.parse(m.toByteArray());
-		assertEquals("Grüße 日本語", back.getSubject());
-		assertEquals("josé", back.getFrom().get(0).getUser());
-		assertEquals("résumé.pdf", back.getAttachments().get(0).getFilename());
-		assertEquals("en", back.getAttachments().get(1).getContentDisposition().getParameterInfo("filename").getLanguage());
+			Message back = Message.parse(m.toByteArray());
+			assertEquals("Grüße 日本語", back.getSubject());
+			assertEquals("josé", back.getFrom().get(0).getUser());
+			assertEquals("résumé.pdf", back.getAttachments().get(0).getFilename());
+			assertEquals("en", back.getAttachments().get(1).getContentDisposition().getParameterInfo("filename").getLanguage());
 
-		// switching the same message to ASCII mode
-		m.setUtf8Headers(false);
-		String ascii = headerBlock(m);
-		assertTrue(ascii.contains("Subject: =?UTF-8?B?"), ascii);
-		// the mailbox itself has no ASCII form, so the message still needs SMTPUTF8
-		assertTrue(ascii.contains("<josé@exämple.com>"), ascii);
-		assertTrue(m.needsSmtpUtf8());
-		m.setFrom(new Address("José Núñez", "jose", "example.com"));
-		assertFalse(m.needsSmtpUtf8());
-		assertTrue(isAscii(m.toByteArray()));
+			// switching the same message to ASCII mode
+			m.setUtf8Headers(false);
+			String ascii = headerBlock(m);
+			assertTrue(ascii.contains("Subject: =?UTF-8?B?"), ascii);
+			// the mailbox itself has no ASCII form, so the message still needs SMTPUTF8
+			assertTrue(ascii.contains("<josé@exämple.com>"), ascii);
+			assertTrue(m.needsSmtpUtf8());
+			m.setFrom(new Address("José Núñez", "jose", "example.com"));
+			assertFalse(m.needsSmtpUtf8());
+			assertTrue(isAscii(m.toByteArray()));
+		}
 	}
 
 	@Test
-	public void testFoldingCountsOctets() {
+	public void testFoldingCountsOctets() throws IOException {
 		// 30 words of 3 Japanese characters: 9 octets + space each
 		String subject = ("日本語 ").repeat(30).trim();
-		Message m = new Message().setUtf8Headers(true);
-		m.setSubject(subject);
-		for (String line : headerBlock(m).split("\r\n")) {
-			assertTrue(line.getBytes(StandardCharsets.UTF_8).length <= 78,
-					line.getBytes(StandardCharsets.UTF_8).length + ": " + line);
+		try (Message m = new Message()) {
+			m.setUtf8Headers(true);
+			m.setSubject(subject);
+			for (String line : headerBlock(m).split("\r\n")) {
+				assertTrue(line.getBytes(StandardCharsets.UTF_8).length <= 78,
+						line.getBytes(StandardCharsets.UTF_8).length + ": " + line);
+			}
+			assertEquals(subject, Message.parse(m.toByteArray()).getSubject());
 		}
-		assertEquals(subject, Message.parse(m.toByteArray()).getSubject());
 	}
 
 	@Test
-	public void testLineLimitIs998Octets() {
+	public void testLineLimitIs998Octets() throws IOException {
 		String unbreakable = "日".repeat(400); // 1200 octets, no whitespace
-		Message m = new Message().setUtf8Headers(true);
-		m.setSubject(unbreakable);
-		m.setHeader("X-Long", unbreakable);
-		for (String line : headerBlock(m).split("\r\n")) {
-			assertTrue(line.getBytes(StandardCharsets.UTF_8).length <= 998, line);
+		try (Message m = new Message()) {
+			m.setUtf8Headers(true);
+			m.setSubject(unbreakable);
+			m.setHeader("X-Long", unbreakable);
+			for (String line : headerBlock(m).split("\r\n")) {
+				assertTrue(line.getBytes(StandardCharsets.UTF_8).length <= 998, line);
+			}
+			Message back = Message.parse(m.toByteArray());
+			assertEquals(unbreakable, back.getSubject());
+			assertEquals(unbreakable, EncodedWord.decode(back.getHeader("X-Long")));
 		}
-		Message back = Message.parse(m.toByteArray());
-		assertEquals(unbreakable, back.getSubject());
-		assertEquals(unbreakable, EncodedWord.decode(back.getHeader("X-Long")));
 	}
 
 	@Test
-	public void testNfc() {
+	public void testNfc() throws IOException {
 		String nfd = Normalizer.normalize("José Ångström", Normalizer.Form.NFD);
 		String nfc = Normalizer.normalize(nfd, Normalizer.Form.NFC);
-		Message m = new Message().setUtf8Headers(true);
-		m.setSubject(nfd);
-		m.setFrom(new Address(nfd, "a", "b.com"));
-		String h = headerBlock(m);
-		assertTrue(h.contains("Subject: " + nfc), h);
-		assertTrue(h.contains("From: " + nfc + " <a@b.com>"), h);
-		assertFalse(h.contains(nfd));
-		// ASCII mode encodes the NFC form
-		m.setUtf8Headers(false);
-		assertEquals(nfc, Message.parse(m.toByteArray()).getSubject());
+		try (Message m = new Message()) {
+			m.setUtf8Headers(true);
+			m.setSubject(nfd);
+			m.setFrom(new Address(nfd, "a", "b.com"));
+			String h = headerBlock(m);
+			assertTrue(h.contains("Subject: " + nfc), h);
+			assertTrue(h.contains("From: " + nfc + " <a@b.com>"), h);
+			assertFalse(h.contains(nfd));
+			// ASCII mode encodes the NFC form
+			m.setUtf8Headers(false);
+			assertEquals(nfc, Message.parse(m.toByteArray()).getSubject());
+		}
 	}
 
 	@Test
@@ -245,31 +254,34 @@ public class TestUtf8Headers {
 	}
 
 	@Test
-	public void testAttachMessage() {
+	public void testAttachMessage() throws IOException {
 		Message ascii = new Message();
 		ascii.setSubject("Grüße");
 		ascii.setText("hello");
-		Message utf8 = new Message().setUtf8Headers(true);
-		utf8.setSubject("Grüße");
-		utf8.setText("hallo");
+		try (Message utf8 = new Message()) {
+			utf8.setUtf8Headers(true);
+			utf8.setSubject("Grüße");
+			utf8.setText("hallo");
 
-		Message m = new Message();
-		m.setSubject("two forwarded messages");
-		m.setText("see attached");
-		Message p1 = m.attachMessage(ascii);
-		Message p2 = m.attachMessage(utf8);
-		assertEquals("message/rfc822", p1.getMimeType());
-		assertEquals("message/global", p2.getMimeType());
-		assertEquals("8bit", p2.getTransferEncoding());
-		assertFalse(m.needsSmtpUtf8());
+			try (Message m = new Message()) {
+				m.setSubject("two forwarded messages");
+				m.setText("see attached");
+				Message p1 = m.attachMessage(ascii);
+				Message p2 = m.attachMessage(utf8);
+				assertEquals("message/rfc822", p1.getMimeType());
+				assertEquals("message/global", p2.getMimeType());
+				assertEquals("8bit", p2.getTransferEncoding());
+				assertFalse(m.needsSmtpUtf8());
 
-		Message back = Message.parse(m.toByteArray());
-		assertEquals(3, back.getParts().size());
-		assertEquals(2, back.getAttachments().size());
-		assertEquals("Grüße", back.getParts().get(1).getAttachedMessage().getSubject());
-		assertEquals("hello", back.getParts().get(1).getAttachedMessage().getText());
-		assertEquals("Grüße", back.getParts().get(2).getAttachedMessage().getSubject());
-		assertTrue(back.getParts().get(2).getAttachedMessage().isUtf8Headers());
+				Message back = Message.parse(m.toByteArray());
+				assertEquals(3, back.getParts().size());
+				assertEquals(2, back.getAttachments().size());
+				assertEquals("Grüße", back.getParts().get(1).getAttachedMessage().getSubject());
+				assertEquals("hello", back.getParts().get(1).getAttachedMessage().getText());
+				assertEquals("Grüße", back.getParts().get(2).getAttachedMessage().getSubject());
+				assertTrue(back.getParts().get(2).getAttachedMessage().isUtf8Headers());
+			}
+		}
 	}
 
 	@Test
