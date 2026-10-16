@@ -1,6 +1,6 @@
 # Changelog
 
-## parley-mail 1.0.0 (unreleased)
+## parley-mail 1.0.0 (2026-10-16)
 
 The message model and mailbox store of BjlEmail (`us.bringardner:bjl_email` 1.0.0-SNAPSHOT, never
 released) are now **parley-mail**, part of the Parley library family. The SMTP, IMAP and POP3
