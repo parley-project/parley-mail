@@ -27,9 +27,14 @@ public final class MailboxView {
 		public int exists = -1;
 		/** Messages whose flags changed: message sequence number and UID. */
 		public final List<long[]> flagsChanged = new ArrayList<>();
+		/**
+		 * Another server deleted the mailbox and made it again (a new UIDVALIDITY): the UIDs the
+		 * session has mean nothing now, so it must close the mailbox (IMAP: OK [CLOSED]).
+		 */
+		public boolean uidValidityChanged;
 
 		public boolean isEmpty() {
-			return expunged.isEmpty() && exists < 0 && flagsChanged.isEmpty();
+			return expunged.isEmpty() && exists < 0 && flagsChanged.isEmpty() && !uidValidityChanged;
 		}
 	}
 
@@ -92,6 +97,23 @@ public final class MailboxView {
 	void flagsChanged(long uid) {
 		if (Collections.binarySearch(uids, uid) >= 0) {
 			pendingFlags.add(uid);
+		}
+	}
+
+	/** Set when the mailbox was recreated under this view (see {@link Updates#uidValidityChanged}). */
+	private boolean recreated;
+
+	void recreated() {
+		recreated = true;
+	}
+
+	/** True once the mailbox was recreated under this view. */
+	public boolean isRecreated() {
+		mailbox.lock();
+		try {
+			return recreated;
+		} finally {
+			mailbox.unlock();
 		}
 	}
 
@@ -187,6 +209,10 @@ public final class MailboxView {
 		Updates u = new Updates();
 		mailbox.lock();
 		try {
+			if (recreated) {
+				u.uidValidityChanged = true;
+				return u;
+			}
 			if (allowExpunge && !pendingExpunges.isEmpty()) {
 				// send in descending order, so no number changes before it is sent
 				for (Long uid : pendingExpunges.descendingSet()) {

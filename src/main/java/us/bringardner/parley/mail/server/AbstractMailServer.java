@@ -18,6 +18,9 @@ public abstract class AbstractMailServer extends Server {
 	private FileSource maildropRoot;
 	private FileSourceFactory factory = FileSourceFactory.getDefaultFactory();
 	private volatile int autologout;
+	/** This server's lock domain and claim on the maildrop root, while it runs. */
+	private us.bringardner.parley.net.lock.LockDomain lockDomain;
+	private us.bringardner.parley.net.lock.StoreClaim storeClaim;
 
 	/**
 	 * @param propertyPrefix the prefix of this server's properties, e.g. "Pop3Server"
@@ -126,5 +129,54 @@ public abstract class AbstractMailServer extends Server {
 
 	/** Called after the idle time was set; the default does nothing. */
 	protected void onAutologoutChanged(int autologout) {
+	}
+
+	// ------------------------------------------------------------------ the store claim
+
+	/**
+	 * Claim the maildrop root (see {@link us.bringardner.parley.mail.store.MailLocks}) before
+	 * accepting connections: with {@code parley.mail.sharedStore} off, a second server on it is
+	 * refused; shared, servers that share it are let in. Fails to start if the claim fails.
+	 */
+	@Override
+	public synchronized void start() {
+		boolean claimed = false;
+		if (storeClaim == null && maildropRoot != null) {
+			try {
+				lockDomain = us.bringardner.parley.mail.store.MailLocks.acquire(getMaildropRoot());
+				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(getName(), getPort()));
+				claimed = true;
+			} catch (IOException e) {
+				releaseStoreClaim();
+				logError("Can't start " + getName() + ": " + e.getMessage(), e);
+				throw new java.io.UncheckedIOException(e);
+			}
+		}
+		boolean started = false;
+		try {
+			super.start();
+			started = true;
+		} finally {
+			if (!started && claimed) {
+				releaseStoreClaim(); // couldn't start (the port is taken, say): don't keep the store
+			}
+		}
+	}
+
+	@Override
+	public void stop() {
+		super.stop();
+		releaseStoreClaim();
+	}
+
+	private synchronized void releaseStoreClaim() {
+		if (storeClaim != null) {
+			storeClaim.close();
+			storeClaim = null;
+		}
+		if (lockDomain != null) {
+			us.bringardner.parley.mail.store.MailLocks.release(lockDomain);
+			lockDomain = null;
+		}
 	}
 }

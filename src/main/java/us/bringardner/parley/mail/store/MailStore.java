@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Set;
 
 import us.bringardner.parley.files.FileSource;
+import us.bringardner.parley.net.lock.LockDomain;
+import us.bringardner.parley.net.lock.Mode;
+import us.bringardner.parley.net.lock.NamedLock;
 
 /**
  * One user's mailboxes. INBOX is the user's POP3 maildrop directory; every other
@@ -87,6 +90,34 @@ public final class MailStore {
 		this.registry = registry;
 	}
 
+	/** What runs under the tree lock. */
+	private interface TreeWork<T> {
+		T run() throws IOException;
+	}
+
+	/**
+	 * Run under this user's tree lock: exclusive for CREATE, DELETE, RENAME and subscription
+	 * changes, shared to read the subscriptions. With other servers (a lock domain), the lock
+	 * reaches them; otherwise it is this JVM's.
+	 */
+	private <T> T underTree(Mode mode, TreeWork<T> work) throws IOException {
+		LockDomain d = registry.domainOf(inbox);
+		if (d == null) {
+			synchronized (subscriptionLock) {
+				return work.run();
+			}
+		}
+		try (NamedLock l = d.lock(MailboxRegistry.lockName("tree", d, inbox), mode, d.options().timeout())) {
+			return work.run();
+		}
+	}
+
+	/** Lock one mailbox (being deleted or renamed) in its domain, or null without one. */
+	private NamedLock lockMailbox(FileSource dir) throws IOException {
+		LockDomain d = registry.domainOf(dir);
+		return d == null ? null : d.lock(MailboxRegistry.lockName("mailbox", d, dir), Mode.EXCLUSIVE, d.options().timeout());
+	}
+
 	public FileSource getInboxDirectory() {
 		return inbox;
 	}
@@ -100,6 +131,16 @@ public final class MailStore {
 	 * Drafts, Trash, Junk, Archive), all subscribed.
 	 */
 	public void init(boolean createDefaults) throws IOException {
+		if (!inbox.mkdirs() && !inbox.isDirectory()) {
+			throw new IOException("Can't create " + inbox.getAbsolutePath());
+		}
+		underTree(Mode.EXCLUSIVE, () -> {
+			initLocked(createDefaults);
+			return null;
+		});
+	}
+
+	private void initLocked(boolean createDefaults) throws IOException {
 		if (!inbox.exists() && !inbox.mkdirs()) {
 			throw new IOException("Can't create " + inbox.getAbsolutePath());
 		}
@@ -337,7 +378,14 @@ public final class MailStore {
 	 * mailbox becomes selectable.
 	 */
 	public void create(String name, String specialUse) throws IOException {
-		name = normalize(name);
+		String n = normalize(name);
+		underTree(Mode.EXCLUSIVE, () -> {
+			createLocked(n, specialUse);
+			return null;
+		});
+	}
+
+	private void createLocked(String name, String specialUse) throws IOException {
 		if (MailboxConstants.INBOX.equals(name)) {
 			throw new StoreException(MailboxConstants.CODE_ALREADYEXISTS, "INBOX always exists");
 		}
@@ -366,7 +414,14 @@ public final class MailStore {
 	 * (RFC 9051 section 6.3.4); others are removed.
 	 */
 	public void delete(String name) throws IOException {
-		name = normalize(name);
+		String n = normalize(name);
+		underTree(Mode.EXCLUSIVE, () -> {
+			deleteLocked(n);
+			return null;
+		});
+	}
+
+	private void deleteLocked(String name) throws IOException {
 		if (MailboxConstants.INBOX.equals(name)) {
 			throw new StoreException(MailboxConstants.CODE_CANNOT, "INBOX can't be deleted");
 		}
@@ -378,6 +433,13 @@ public final class MailStore {
 		if (children && dir.getChild(NOSELECT_MARKER).exists()) {
 			throw new StoreException(MailboxConstants.CODE_HASCHILDREN, "The mailbox has child mailboxes");
 		}
+		try (NamedLock busy = lockMailbox(dir)) {
+			deleteMailboxLocked(dir, children);
+		}
+		removeSubscriptionLocked(name, false);
+	}
+
+	private void deleteMailboxLocked(FileSource dir, boolean children) throws IOException {
 		registry.invalidate(dir);
 		if (children) {
 			FileSource[] list = dir.listFiles();
@@ -394,7 +456,6 @@ public final class MailStore {
 		} else if (!deleteTree(dir)) {
 			throw new StoreException(MailboxConstants.CODE_CANNOT, "Can't delete the mailbox");
 		}
-		removeSubscription(name, false);
 	}
 
 	/**
@@ -402,8 +463,15 @@ public final class MailStore {
 	 * mailbox and leaves INBOX empty.
 	 */
 	public void rename(String from, String to) throws IOException {
-		from = normalize(from);
-		to = normalize(to);
+		String f = normalize(from);
+		String t = normalize(to);
+		underTree(Mode.EXCLUSIVE, () -> {
+			renameLocked(f, t);
+			return null;
+		});
+	}
+
+	private void renameLocked(String from, String to) throws IOException {
 		if (MailboxConstants.INBOX.equals(to)) {
 			throw new StoreException(MailboxConstants.CODE_ALREADYEXISTS, "INBOX already exists");
 		}
@@ -412,7 +480,7 @@ public final class MailStore {
 			throw new StoreException(MailboxConstants.CODE_ALREADYEXISTS, "The new name already exists");
 		}
 		if (MailboxConstants.INBOX.equals(from)) {
-			create(to, null);
+			createLocked(to, null);
 			Mailbox src = registry.acquire(inbox);
 			Mailbox dst = registry.acquire(target);
 			try {
@@ -436,15 +504,17 @@ public final class MailStore {
 		if (parent != null && !parent.exists()) {
 			// create the missing superiors as normal mailboxes
 			int i = to.lastIndexOf(MailboxConstants.DELIMITER);
-			create(to.substring(0, i), null);
+			createLocked(to.substring(0, i), null);
 		}
-		registry.invalidate(dir);
-		if (!dir.renameTo(target)) {
-			throw new StoreException(MailboxConstants.CODE_CANNOT, "Can't rename the mailbox");
+		try (NamedLock busy = lockMailbox(dir)) {
+			registry.invalidate(dir);
+			if (!dir.renameTo(target)) {
+				throw new StoreException(MailboxConstants.CODE_CANNOT, "Can't rename the mailbox");
+			}
 		}
 		// subscriptions follow the mailbox and its children
-		synchronized (subscriptionLock) {
-			List<String> subs = readSubscriptions();
+		{
+			List<String> subs = readSubscriptionsLocked();
 			List<String> next = new ArrayList<>();
 			boolean changed = false;
 			for (String s : subs) {
@@ -479,7 +549,11 @@ public final class MailStore {
 	// ------------------------------------------------------------------ subscriptions
 
 	public List<String> readSubscriptions() throws IOException {
-		synchronized (subscriptionLock) {
+		return underTree(Mode.SHARED, this::readSubscriptionsLocked);
+	}
+
+	private List<String> readSubscriptionsLocked() throws IOException {
+		{
 			FileSource f = inbox.getChild(SUBSCRIPTIONS);
 			List<String> ret = new ArrayList<>();
 			if (!f.exists()) {
@@ -497,19 +571,23 @@ public final class MailStore {
 		}
 	}
 
+	/** Write the subscriptions (under the tree lock): a temporary file of its own, renamed over them. */
 	private void writeSubscriptions(List<String> names) throws IOException {
-		FileSource tmp = inbox.getChild(SUBSCRIPTIONS + ".tmp");
-		try (OutputStream out = tmp.getOutputStream()) {
-			for (String n : names) {
-				out.write((n + "\n").getBytes(StandardCharsets.UTF_8));
+		FileSource tmp = inbox.getChild(SUBSCRIPTIONS + "." + Long.toHexString(System.nanoTime()) + "."
+				+ Integer.toHexString(System.identityHashCode(names)) + ".tmp");
+		try {
+			try (OutputStream out = tmp.getOutputStream()) {
+				for (String n : names) {
+					out.write((n + "\n").getBytes(StandardCharsets.UTF_8));
+				}
 			}
-		}
-		FileSource f = inbox.getChild(SUBSCRIPTIONS);
-		if (f.exists()) {
-			f.delete();
-		}
-		if (!tmp.renameTo(f)) {
-			throw new IOException("Can't save the subscriptions");
+			if (!tmp.renameTo(inbox.getChild(SUBSCRIPTIONS), true)) {
+				throw new IOException("Can't save the subscriptions");
+			}
+		} finally {
+			if (tmp.exists()) {
+				tmp.delete();
+			}
 		}
 	}
 
@@ -517,13 +595,15 @@ public final class MailStore {
 	public void subscribe(String name) throws IOException {
 		name = normalize(name);
 		segments(name);
-		synchronized (subscriptionLock) {
-			List<String> subs = readSubscriptions();
-			if (!subs.contains(name)) {
-				subs.add(name);
+		String n = name;
+		underTree(Mode.EXCLUSIVE, () -> {
+			List<String> subs = readSubscriptionsLocked();
+			if (!subs.contains(n)) {
+				subs.add(n);
 				writeSubscriptions(subs);
 			}
-		}
+			return null;
+		});
 	}
 
 	/** UNSUBSCRIBE; unsubscribing a name that isn't subscribed is not an error (RFC 9051 section 6.3.8). */
@@ -532,8 +612,15 @@ public final class MailStore {
 	}
 
 	private void removeSubscription(String name, boolean mustExist) throws IOException {
-		synchronized (subscriptionLock) {
-			List<String> subs = readSubscriptions();
+		underTree(Mode.EXCLUSIVE, () -> {
+			removeSubscriptionLocked(name, mustExist);
+			return null;
+		});
+	}
+
+	private void removeSubscriptionLocked(String name, boolean mustExist) throws IOException {
+		{
+			List<String> subs = readSubscriptionsLocked();
 			if (subs.remove(name)) {
 				writeSubscriptions(subs);
 			} else if (mustExist) {
