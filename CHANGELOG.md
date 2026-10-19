@@ -9,6 +9,8 @@
   claims the store when it starts (`AbstractMailServer.start()`), alone or shared, and is refused if another's
   claim doesn't allow it. Mailbox changes, MOVE, CREATE/DELETE/RENAME and subscriptions run under locks that reach
   the other servers; a mailbox catches up with the index another server saved before it changes it.
+- `AbstractMailServer.storeClaimed()` and `releasingStore()`: hooks for work on the store (the SMTP queue, say)
+  that must start after the claim and stop before it is given up.
 - `MailboxView.Updates.uidValidityChanged`: another server deleted and made the mailbox again; the session must
   close it.
 

@@ -153,12 +153,23 @@ public abstract class AbstractMailServer extends Server {
 			}
 		}
 		boolean started = false;
+		boolean prepared = false;
 		try {
+			storeClaimed();
+			prepared = true;
 			super.start();
 			started = true;
+		} catch (IOException e) {
+			logError("Can't start " + getName() + ": " + e.getMessage(), e);
+			throw new java.io.UncheckedIOException(e);
 		} finally {
-			if (!started && claimed) {
-				releaseStoreClaim(); // couldn't start (the port is taken, say): don't keep the store
+			if (!started) {
+				if (prepared) {
+					releasingStore();
+				}
+				if (claimed) {
+					releaseStoreClaim(); // couldn't start (the port is taken, say): don't keep the store
+				}
 			}
 		}
 	}
@@ -166,7 +177,24 @@ public abstract class AbstractMailServer extends Server {
 	@Override
 	public void stop() {
 		super.stop();
+		releasingStore();
 		releaseStoreClaim();
+	}
+
+	/**
+	 * Called by {@link #start()} once the store is claimed and before connections are accepted:
+	 * work on the store (the SMTP queue, say) starts here, so it never runs on a store this server
+	 * hasn't claimed. A failure stops the start. The default does nothing.
+	 * @throws IOException if the work can't start
+	 */
+	protected void storeClaimed() throws IOException {
+	}
+
+	/**
+	 * Called by {@link #stop()} (and by a start that fails after {@link #storeClaimed()}) after
+	 * connections stopped and before the store claim is given up. The default does nothing.
+	 */
+	protected void releasingStore() {
 	}
 
 	private synchronized void releaseStoreClaim() {
