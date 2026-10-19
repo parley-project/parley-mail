@@ -68,7 +68,8 @@ public final class MailLocks {
 				// one its own, from its path
 				name = name + "-" + Integer.toHexString(key.hashCode());
 			}
-			d = locks().domain(name, root);
+			// the sharing is read when the root is first used (so it can differ between roots)
+			d = locks().domain(name, root, locks().options().withSharing(sharing()));
 			DOMAINS.put(key, d);
 			MailboxRegistry.get().useLocks(d);
 		}
