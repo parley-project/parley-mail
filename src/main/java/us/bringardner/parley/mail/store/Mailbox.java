@@ -1106,13 +1106,30 @@ public final class Mailbox {
 
 	/**
 	 * Remove messages (EXPUNGE): their files are deleted and every other view is
-	 * told. The caller reports the expunges to its own session.
+	 * told. The caller reports the expunges to its own session. The UIDs are taken to belong to
+	 * the mailbox as it is now: see {@link #expunge(Collection, MailboxView, long)}.
 	 *
 	 * @return the UIDs removed
 	 */
 	public List<Long> expunge(Collection<Long> uids, MailboxView source) throws IOException {
+		return expunge(uids, source, getUidValidity());
+	}
+
+	/**
+	 * Remove messages (EXPUNGE), if the mailbox is still the one the UIDs were read from: nothing
+	 * is removed if it was recreated (another UIDVALIDITY, as the change catches up with another
+	 * server), or if the source view was told it was, since the same UIDs now name other
+	 * messages.
+	 *
+	 * @param uidValidity the UIDVALIDITY the UIDs were read under
+	 * @return the UIDs removed
+	 */
+	public List<Long> expunge(Collection<Long> uids, MailboxView source, long uidValidity) throws IOException {
 		return change(() -> {
 			List<Long> removed = new ArrayList<>();
+			if (this.uidValidity != uidValidity || (source != null && source.recreatedLocked())) {
+				return removed; // recreated: those UIDs aren't these messages
+			}
 			for (long uid : new TreeSet<>(uids)) {
 				MessageInfo m = messages.get(uid);
 				if (m == null) {

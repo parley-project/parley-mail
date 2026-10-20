@@ -11,6 +11,8 @@
   the other servers; a mailbox catches up with the index another server saved before it changes it.
 - `AbstractMailServer.storeClaimed()` and `releasingStore()`: hooks for work on the store (the SMTP queue, say)
   that must start after the claim and stop before it is given up.
+- `Mailbox.expunge(uids, view, uidValidity)`: removes nothing if the mailbox was recreated since the UIDs were read
+  (the two-argument form uses the UIDVALIDITY when called).
 - `MailboxView.Updates.uidValidityChanged`: another server deleted and made the mailbox again; the session must
   close it.
 

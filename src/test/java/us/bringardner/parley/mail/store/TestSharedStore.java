@@ -154,6 +154,23 @@ public class TestSharedStore {
 		view.close();
 	}
 
+	/** An EXPUNGE read from the old mailbox removes nothing from the one another server made again. */
+	@Test
+	public void anExpungeNeverReachesTheRecreatedMailbox() throws Exception {
+		Mailbox ma = SharedStoreSupport.open(a, inbox);
+		MessageInfo old = SharedStoreSupport.append(ma, "old");
+		ma.storeFlags(old, Mailbox.FlagOp.ADD, Set.of("\\Deleted"), null);
+		long before = ma.getUidValidity();
+		MailStore.deleteTree(inbox);
+		Mailbox mb = SharedStoreSupport.open(b, inbox);
+		MessageInfo fresh = SharedStoreSupport.append(mb, "new");
+		assertEquals(old.getUid(), fresh.getUid(), "the same UID, in the new mailbox");
+		assertTrue(ma.expunge(List.of(old.getUid()), null, before).isEmpty(), "nothing removed");
+		mb.refresh(true);
+		assertEquals(1, mb.count(), "b's message is still there");
+		assertTrue(fresh.getFile().exists());
+	}
+
 	@Test
 	public void moveKeepsFlagsAndLeavesOneCopy() throws Exception {
 		FileSource archive = inbox.getChild(MailStore.MAILBOXES).getChild("Archive");

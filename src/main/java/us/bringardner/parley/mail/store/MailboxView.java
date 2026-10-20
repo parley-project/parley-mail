@@ -107,6 +107,11 @@ public final class MailboxView {
 		recreated = true;
 	}
 
+	/** {@link #isRecreated()} with the mailbox's lock already held. */
+	boolean recreatedLocked() {
+		return recreated;
+	}
+
 	/** True once the mailbox was recreated under this view. */
 	public boolean isRecreated() {
 		mailbox.lock();
