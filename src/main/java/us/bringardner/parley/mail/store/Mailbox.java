@@ -32,6 +32,7 @@ import us.bringardner.parley.mail.Downgrader;
 import us.bringardner.parley.mail.Message;
 import us.bringardner.parley.net.lock.LockDomain;
 import us.bringardner.parley.net.lock.LockGroup;
+import us.bringardner.parley.net.lock.LockLostException;
 import us.bringardner.parley.net.lock.Mode;
 import us.bringardner.parley.net.lock.NamedLock;
 import us.bringardner.parley.net.lock.Sharing;
@@ -199,6 +200,18 @@ public final class Mailbox {
 			if (l != null) {
 				l.close();
 			}
+		}
+	}
+
+	/**
+	 * Before each change to the mailbox's files (a delete, a move): the domain lock must still be
+	 * held. This asks only this JVM ({@link NamedLock#isValid()}): a lease holder stops trusting
+	 * its lease before any other server may take it over, so one that was paused finds it lost
+	 * here rather than removing a message the server that took over still indexes.
+	 */
+	private static void ensureHeld(NamedLock l) throws IOException {
+		if (l != null && !l.isValid()) {
+			throw new LockLostException("Lost the lock " + l.name() + " while changing the mailbox; nothing more is changed");
 		}
 	}
 
@@ -945,36 +958,39 @@ public final class Mailbox {
 			List<MessageInfo> moved = new ArrayList<>();
 			List<FileSource[]> renames = new ArrayList<>();
 			List<MessageInfo> copied = new ArrayList<>();
-			for (MessageInfo m : list) {
-				if (messages.get(m.getUid()) != m) {
-					continue; // expunged meanwhile
-				}
-				Set<String> flags = new LinkedHashSet<>(m.flags);
-				FileSource dest = target.dir.getChild(newName());
-				if (m.getFile().renameTo(dest)) {
-					renames.add(new FileSource[] {m.getFile(), dest});
-					ret.add(target.addLocked(dest, flags, m.getInternalDate()));
-					moved.add(m);
-				} else {
-					// can't rename across here: a copy, and the original is expunged below
-					FileSource tmp = target.dir.getChild(tmpName(dest.getName()));
-					try (InputStream in = m.getFile().getInputStream();
-							OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
-						in.transferTo(out);
-					}
-					if (!tmp.renameTo(dest)) {
-						tmp.delete();
-						throw new IOException("Can't store the message in " + target.dir.getAbsolutePath());
-					}
-					renames.add(new FileSource[] {null, dest});
-					ret.add(target.addLocked(dest, flags, m.getInternalDate()));
-					copied.add(m);
-				}
-			}
 			try {
+				for (MessageInfo m : list) {
+					if (messages.get(m.getUid()) != m) {
+						continue; // expunged meanwhile
+					}
+					Set<String> flags = new LinkedHashSet<>(m.flags);
+					FileSource dest = target.dir.getChild(newName());
+					ensureHeld(mine);
+					ensureHeld(theirs);
+					if (m.getFile().renameTo(dest)) {
+						renames.add(new FileSource[] {m.getFile(), dest});
+						ret.add(target.addLocked(dest, flags, m.getInternalDate()));
+						moved.add(m);
+					} else {
+						// can't rename across here: a copy, and the original is expunged below
+						FileSource tmp = target.dir.getChild(tmpName(dest.getName()));
+						try (InputStream in = m.getFile().getInputStream();
+								OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
+							in.transferTo(out);
+						}
+						if (!tmp.renameTo(dest)) {
+							tmp.delete();
+							throw new IOException("Can't store the message in " + target.dir.getAbsolutePath());
+						}
+						renames.add(new FileSource[] {null, dest});
+						ret.add(target.addLocked(dest, flags, m.getInternalDate()));
+						copied.add(m);
+					}
+				}
 				target.commit();
 			} catch (IOException | RuntimeException e) {
-				// not in the target's saved index: put every file back where it was
+				// not in the target's saved index (a failed copy, the lock lost, the save failed):
+				// put every file back where it was
 				for (int i = renames.size() - 1; i >= 0; i--) {
 					FileSource[] r = renames.get(i);
 					if (r[0] == null) {
@@ -982,7 +998,9 @@ public final class Mailbox {
 					} else {
 						r[1].renameTo(r[0]);
 					}
-					target.forget(ret.get(i));
+					if (i < ret.size()) {
+						target.forget(ret.get(i));
+					}
 				}
 				throw e;
 			}
@@ -990,6 +1008,7 @@ public final class Mailbox {
 				forgetQuietly(m, source);
 			}
 			for (MessageInfo m : copied) {
+				ensureHeld(mine);
 				if (!m.getFile().exists() || m.getFile().delete()) {
 					forgetQuietly(m, source);
 				}
@@ -1053,6 +1072,7 @@ public final class Mailbox {
 				if (m == null) {
 					continue;
 				}
+				ensureHeld(changing);
 				if (m.getFile().exists() && !m.getFile().delete()) {
 					continue; // still there: not expunged
 				}

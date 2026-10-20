@@ -3,6 +3,7 @@ package us.bringardner.parley.mail.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -19,6 +20,10 @@ import org.junit.jupiter.api.Test;
 
 import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.net.lock.LockDomain;
+import us.bringardner.parley.net.lock.LockLostException;
+import us.bringardner.parley.net.lock.LockOptions;
+import us.bringardner.parley.net.lock.Locks;
+import us.bringardner.parley.net.lock.Sharing;
 
 /** Two servers sharing one store (each its own Locks, as two JVMs would have). */
 public class TestSharedStore {
@@ -197,5 +202,49 @@ public class TestSharedStore {
 		ma.refresh(true);
 		assertTrue(ma.isDeleted());
 		assertFalse(inbox.exists(), "and not made again by the refresh");
+	}
+
+	/** Message files in a mailbox directory. */
+	private static int files(FileSource dir) throws Exception {
+		int n = 0;
+		for (FileSource f : dir.listFiles()) {
+			if (f.isFile() && !f.getName().startsWith(".")) {
+				n++;
+			}
+		}
+		return n;
+	}
+
+	/**
+	 * A server whose lock was lost while it worked (a lease holder paused while another server
+	 * took over) changes no files: no message is deleted or moved under the server that took over.
+	 */
+	@Test
+	public void aServerThatLostItsLockDeletesAndMovesNothing() throws Exception {
+		FileSource r = SharedStoreSupport.newRoot();
+		try (Locks locks = Locks.open(LockOptions.sharing(Sharing.CLUSTER).withProvider(LosableLocks.class.getName()).withOwnerId("x"))) {
+			LockDomain d = locks.domain("mail", r);
+			FileSource dir = r.getChild("tony");
+			FileSource archive = dir.getChild(MailStore.MAILBOXES).getChild("archive");
+			Mailbox m = SharedStoreSupport.open(d, dir);
+			Mailbox t = SharedStoreSupport.open(d, archive);
+			MessageInfo one = SharedStoreSupport.append(m, "one");
+			MessageInfo two = SharedStoreSupport.append(m, "two");
+			LosableLocks.lost = true;
+			try {
+				assertThrows(LockLostException.class, () -> m.expunge(List.of(one.getUid(), two.getUid()), null));
+				assertEquals(2, files(dir), "nothing deleted");
+				assertThrows(LockLostException.class, () -> m.moveTo(t, List.of(one, two), null));
+				assertEquals(2, files(dir), "nothing moved away");
+				assertEquals(0, files(archive), "nor left in the target");
+				assertEquals(0, t.count());
+			} finally {
+				LosableLocks.lost = false;
+			}
+			assertEquals(2, m.count(), "still both, as saved");
+			assertEquals(1, m.moveTo(t, List.of(one), null).size(), "with the lock it works");
+			assertEquals(1, files(dir));
+			assertEquals(1, files(archive));
+		}
 	}
 }
