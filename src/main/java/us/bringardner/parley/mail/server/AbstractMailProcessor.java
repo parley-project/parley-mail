@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import us.bringardner.parley.mail.SaslPrep;
+import us.bringardner.parley.net.sasl.ScramCredentials;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
+import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.IPrincipal;
 import us.bringardner.parley.net.server.Server;
 
@@ -35,6 +37,47 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 			return null;
 		}
 		return getServer().authenticate(user, password.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * The principal of a user a SASL mechanism has proven without a password check (SCRAM).
+	 * The name is prepared with SASLprep, as for {@link #authenticate(String, String)}.
+	 *
+	 * @return the principal, or null if the name can't be prepared or the user isn't there
+	 * @since 1.1.0
+	 */
+	protected IPrincipal verifiedPrincipal(String user) {
+		user = SaslPrep.prepare(user, false);
+		if (user == null || user.isEmpty()) {
+			return null;
+		}
+		return getServer().getVerifiedPrincipal(user);
+	}
+
+	/**
+	 * @param hash "SHA-1" or "SHA-256"
+	 * @return true if the server's access control list can serve SCRAM with that hash
+	 * @since 1.1.0
+	 */
+	public boolean supportsScram(String hash) {
+		IAccessControlList acl = getServer().getAccessControl();
+		return acl != null && acl.supportsScram(hash);
+	}
+
+	/**
+	 * The user's SCRAM credentials from the server's access control list, for the SCRAM mechanism.
+	 * The name is prepared with SASLprep first.
+	 *
+	 * @return the credentials, or null if there are none (the login then fails like a wrong password)
+	 * @since 1.1.0
+	 */
+	public ScramCredentials getScramCredentials(String user, String hash) {
+		IAccessControlList acl = getServer().getAccessControl();
+		user = SaslPrep.prepare(user, false);
+		if (acl == null || user == null || user.isEmpty()) {
+			return null;
+		}
+		return acl.getScramCredentials(user, hash);
 	}
 
 	/** True if logins must wait for TLS on this connection. */

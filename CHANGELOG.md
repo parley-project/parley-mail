@@ -16,6 +16,9 @@
 - `MailboxView.Updates.uidValidityChanged`: another server deleted and made the mailbox again; the session must
   close it.
 
+- SCRAM logins for the mail servers: `AbstractMailProcessor.supportsScram(hash)`, `getScramCredentials(user, hash)`
+  and `verifiedPrincipal(user)`, on parley-net 1.1.0's access control list (user names prepared with SASLprep).
+
 ### Changed (no code change needed)
 
 - The index has a `VERSION` line (a save count and a random save id). Earlier versions ignore it.
