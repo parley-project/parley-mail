@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import us.bringardner.parley.mail.SaslPrep;
 import us.bringardner.parley.net.sasl.ScramCredentials;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
+import us.bringardner.parley.net.server.AccessControlUnavailableException;
 import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.IPrincipal;
 import us.bringardner.parley.net.server.Server;
@@ -40,13 +41,32 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 	}
 
 	/**
+	 * Check a user name and password like {@link #authenticate(String, String)}, but tell a failed
+	 * login (null) from an access control list that can't answer now (the exception), so the
+	 * protocol can say "try again later" and not count a failed login.
+	 *
+	 * @return the principal, or null if the login failed
+	 * @throws AccessControlUnavailableException if the access control list can't answer now
+	 * @since 1.1.0
+	 */
+	protected IPrincipal checkLogin(String user, String password) throws AccessControlUnavailableException {
+		user = SaslPrep.prepare(user, false);
+		password = SaslPrep.prepare(password, false);
+		if (user == null || password == null || user.isEmpty()) {
+			return null;
+		}
+		return getServer().checkLogin(user, password.getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
 	 * The principal of a user a SASL mechanism has proven without a password check (SCRAM).
 	 * The name is prepared with SASLprep, as for {@link #authenticate(String, String)}.
 	 *
 	 * @return the principal, or null if the name can't be prepared or the user isn't there
+	 * @throws AccessControlUnavailableException if the access control list can't answer now
 	 * @since 1.1.0
 	 */
-	protected IPrincipal verifiedPrincipal(String user) {
+	protected IPrincipal verifiedPrincipal(String user) throws AccessControlUnavailableException {
 		user = SaslPrep.prepare(user, false);
 		if (user == null || user.isEmpty()) {
 			return null;
@@ -69,9 +89,10 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 	 * The name is prepared with SASLprep first.
 	 *
 	 * @return the credentials, or null if there are none (the login then fails like a wrong password)
+	 * @throws AccessControlUnavailableException if the access control list can't answer now
 	 * @since 1.1.0
 	 */
-	public ScramCredentials getScramCredentials(String user, String hash) {
+	public ScramCredentials getScramCredentials(String user, String hash) throws AccessControlUnavailableException {
 		IAccessControlList acl = getServer().getAccessControl();
 		user = SaslPrep.prepare(user, false);
 		if (acl == null || user == null || user.isEmpty()) {

@@ -18,6 +18,9 @@
 
 - SCRAM logins for the mail servers: `AbstractMailProcessor.supportsScram(hash)`, `getScramCredentials(user, hash)`
   and `verifiedPrincipal(user)`, on parley-net 1.1.0's access control list (user names prepared with SASLprep).
+- `AbstractMailProcessor.checkLogin(user, password)`: like `authenticate`, but throws
+  `AccessControlUnavailableException` when the access control list can't answer (its database is down), so a
+  server can say "try again later" instead of "wrong password".
 
 ### Changed (no code change needed)
 
