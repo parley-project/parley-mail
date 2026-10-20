@@ -133,6 +133,27 @@ public class TestSharedStore {
 		view.close();
 	}
 
+	/**
+	 * Another server (another JVM, with a counter of its own) deletes and makes the mailbox again
+	 * in the same second: it still gets a new UIDVALIDITY, so this server sees it was recreated.
+	 */
+	@Test
+	public void aMailboxRecreatedInTheSameSecondGetsANewUidValidity() throws Exception {
+		Mailbox ma = SharedStoreSupport.open(a, inbox);
+		SharedStoreSupport.append(ma, "old");
+		long before = ma.getUidValidity();
+		MailboxView view = ma.newView(false);
+		MailStore.deleteTree(inbox);
+		// b's JVM: its last UIDVALIDITY is just behind a's, and it is still the same second
+		Mailbox.LAST_UIDVALIDITY.set(before - 1);
+		Mailbox mb = SharedStoreSupport.open(b, inbox);
+		SharedStoreSupport.append(mb, "new");
+		assertNotEquals(before, mb.getUidValidity(), "a new one, from the store's record");
+		ma.refresh(true);
+		assertTrue(view.collectUpdates(true).uidValidityChanged, "a sees it was recreated");
+		view.close();
+	}
+
 	@Test
 	public void moveKeepsFlagsAndLeavesOneCopy() throws Exception {
 		FileSource archive = inbox.getChild(MailStore.MAILBOXES).getChild("Archive");

@@ -18,6 +18,8 @@
 
 - The index has a `VERSION` line (a save count and a random save id). Earlier versions ignore it.
 - UIDNEXT never goes down, so a UID is never given twice, even after a save that failed.
+- A new UIDVALIDITY is always above the last one given in the store (kept in `.mail-uidvalidity`), so a mailbox
+  deleted and made again by another server in the same second is still seen as new.
 - An APPEND whose index save fails takes its message back out (a retry used to get it twice).
 - Temporary files (index, CRLF rewrites, surrogates, subscriptions) have names of their own, so two writers
   never write into one; the index and other files are replaced in one step where the store can.

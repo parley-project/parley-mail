@@ -72,7 +72,8 @@ public final class Mailbox {
 	/** Refresh from the directory at most this often (ms) unless forced. */
 	private static final long REFRESH_INTERVAL = 1000;
 
-	private static final AtomicLong LAST_UIDVALIDITY = new AtomicLong();
+	/** This JVM's last UIDVALIDITY (package-private for the tests, which play another JVM with it). */
+	static final AtomicLong LAST_UIDVALIDITY = new AtomicLong();
 	private static final AtomicLong SEQUENCE = new AtomicLong();
 	private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -227,9 +228,54 @@ public final class Mailbox {
 
 	// ------------------------------------------------------------------ index
 
-	private static long newUidValidity() {
+	/** The store's last UIDVALIDITY, in the domain's root: {@value}. */
+	static final String UIDVALIDITY_FILE = ".mail-uidvalidity";
+	/** The domain lock under which it is read and written. */
+	static final String UIDVALIDITY_LOCK = "uidvalidity";
+
+	/**
+	 * A UIDVALIDITY never given before in this store: the time in seconds, but always more than
+	 * the last one given. With a lock domain, the last one is kept in the store (under the domain
+	 * lock {@value #UIDVALIDITY_LOCK}), so a mailbox deleted and made again by another server (or
+	 * after a restart) in the same second still gets a new one, and every server sees it was
+	 * recreated. Called inside a change.
+	 */
+	private long newUidValidity() throws IOException {
 		long now = System.currentTimeMillis() / 1000;
-		return LAST_UIDVALIDITY.updateAndGet(last -> Math.max(now, last + 1)) & 0xFFFFFFFFL;
+		if (domain == null) {
+			return LAST_UIDVALIDITY.updateAndGet(last -> Math.max(now, last + 1)) & 0xFFFFFFFFL;
+		}
+		try (NamedLock l = domain.lock(UIDVALIDITY_LOCK, Mode.EXCLUSIVE, domain.options().timeout())) {
+			FileSource f = domain.root().getChild(UIDVALIDITY_FILE);
+			long stored = 0;
+			if (f.exists()) {
+				try (BufferedReader r = new BufferedReader(new InputStreamReader(f.getInputStream(), StandardCharsets.UTF_8))) {
+					String line = r.readLine();
+					stored = line == null ? 0 : Long.parseLong(line.trim());
+				} catch (NumberFormatException e) {
+					stored = 0; // damaged: the time and this JVM's last still keep it new
+				}
+			}
+			long floor = stored;
+			long v = LAST_UIDVALIDITY.updateAndGet(last -> Math.max(now, Math.max(last, floor) + 1));
+			FileSource tmp = domain.root().getChild(tmpName(UIDVALIDITY_FILE.substring(1)));
+			try (OutputStream out = tmp.getOutputStream()) {
+				out.write((v + "\n").getBytes(StandardCharsets.UTF_8));
+			}
+			boolean done = false;
+			try {
+				l.checkValid();
+				done = tmp.renameTo(f, true);
+			} finally {
+				if (!done) {
+					tmp.delete();
+				}
+			}
+			if (!done) {
+				throw new IOException("Can't record the UIDVALIDITY in " + f.getAbsolutePath());
+			}
+			return v & 0xFFFFFFFFL;
+		}
 	}
 
 	private static String newSaveId() {
