@@ -15,6 +15,11 @@ import us.bringardner.parley.net.server.Server;
  */
 public abstract class AbstractMailServer extends Server {
 
+	/** The maildrop root every mail server shares (POP3, IMAP and SMTP deliver to and read the same maildrops). */
+	public static final String MAIL_ROOT_PROP = "parley.mail.root";
+	/** The FileSource factory for {@link #MAIL_ROOT_PROP} (the default factory if not set). */
+	public static final String MAIL_FILE_SOURCE_PROP = "parley.mail.fileSource";
+
 	private FileSource maildropRoot;
 	private FileSourceFactory factory = FileSourceFactory.getDefaultFactory();
 	private volatile int autologout;
@@ -23,7 +28,7 @@ public abstract class AbstractMailServer extends Server {
 	private us.bringardner.parley.net.lock.StoreClaim storeClaim;
 
 	/**
-	 * @param propertyPrefix the prefix of this server's properties, e.g. "Pop3Server"
+	 * @param propertyPrefix the prefix of this server's properties, e.g. "parley.mail.pop3"
 	 */
 	protected AbstractMailServer(int port, String name, String propertyPrefix, boolean secure) {
 		super(port, name);

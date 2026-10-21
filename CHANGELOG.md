@@ -1,5 +1,13 @@
 # Changelog
 
+## parley-mail 2.0.0 (unreleased)
+
+### Changed (needs a configuration change)
+
+- **The maildrop root every mail server shares** is `parley.mail.root` (with `parley.mail.fileSource`):
+  `AbstractMailServer.MAIL_ROOT_PROP` and `MAIL_FILE_SOURCE_PROP`. It replaces `JPop3.root`, `JImap.root` and
+  `JSmtp.root` (Parley 2.0.0; the old names are no longer read).
+
 ## parley-mail 1.1.0 (unreleased)
 
 ### Added

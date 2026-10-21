@@ -23,7 +23,7 @@ public final class MailTestSupport {
 
 	/**
 	 * The test users, a {@link FileBasedAcl} file on the class path: set
-	 * {@code <server name>.userFile} to it. Users (password {@code secret} unless noted):
+	 * {@code <property prefix>.userFile} to it. Users (password {@code secret} unless noted):
 	 * tony (READ, WRITE), reader (READ), team1 and team2 (READ, WRITE, maildrop team), nopop (WRITE),
 	 * hashed (password hashedpw, {PBKDF2}), jösé (pässwörd, READ, WRITE).
 	 */
