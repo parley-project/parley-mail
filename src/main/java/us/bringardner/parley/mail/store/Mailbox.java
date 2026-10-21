@@ -894,13 +894,7 @@ public final class Mailbox {
 	public MessageInfo append(InputStream content, Set<String> flags, long internalDate) throws IOException {
 		checkUsable();
 		String name = newName();
-		FileSource tmp = dir.getChild(tmpName(name));
-		try (OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
-			content.transferTo(out);
-		} catch (IOException | RuntimeException e) {
-			tmp.delete();
-			throw e;
-		}
+		FileSource tmp = writeTemp(content, name);
 		try {
 			return change(() -> {
 				checkUsable();
@@ -924,6 +918,24 @@ public final class Mailbox {
 				tmp.delete();
 			}
 		}
+	}
+
+	/**
+	 * Write a message's content to a hidden temporary file for {@code name} in this mailbox, with CRLF
+	 * line ends: how every new message file starts (append, and a move that has to copy). The caller
+	 * renames it to {@code name} under the lock, then indexes it.
+	 *
+	 * @return the temporary file; nothing is left behind if writing fails
+	 */
+	private FileSource writeTemp(InputStream content, String name) throws IOException {
+		FileSource tmp = dir.getChild(tmpName(name));
+		try (OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
+			content.transferTo(out);
+		} catch (IOException | RuntimeException e) {
+			tmp.delete();
+			throw e;
+		}
+		return tmp;
 	}
 
 	/** Index a file already in the directory (or moved into it); under the lock. */
@@ -1018,11 +1030,11 @@ public final class Mailbox {
 						ret.add(target.addLocked(dest, flags, m.getInternalDate()));
 						moved.add(m);
 					} else {
-						// can't rename across here: a copy, and the original is expunged below
-						FileSource tmp = target.dir.getChild(tmpName(dest.getName()));
-						try (InputStream in = m.getFile().getInputStream();
-								OutputStream out = new CrlfOutputStream(IoUtils.buffered(tmp.getOutputStream()))) {
-							in.transferTo(out);
+						// can't rename across here: a copy (written as append writes), and the original
+						// is expunged below. Not append itself: the whole move is saved, or undone, at once
+						FileSource tmp;
+						try (InputStream in = m.getFile().getInputStream()) {
+							tmp = target.writeTemp(in, dest.getName());
 						}
 						if (!tmp.renameTo(dest)) {
 							tmp.delete();

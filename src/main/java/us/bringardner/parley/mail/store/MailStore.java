@@ -4,6 +4,7 @@ import us.bringardner.parley.core.util.Hex;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -124,6 +125,43 @@ public final class MailStore {
 
 	public MailboxRegistry getRegistry() {
 		return registry;
+	}
+
+	/**
+	 * Deliver a new message: the one way new mail gets into a store, for SMTP's local delivery and
+	 * for code that puts mail into a user's mailbox. It goes to INBOX, or to the Junk mailbox when
+	 * {@code junk} is true ({@link #junkMailbox()}), through {@link Mailbox#append}: stored with
+	 * CRLF line ends and indexed, with no flags, dated now. Call {@link #init(boolean)} first.
+	 *
+	 * @param content the message, read to its end (not closed)
+	 * @return the new message
+	 * @since 1.1.0
+	 */
+	public MessageInfo deliver(InputStream content, boolean junk) throws IOException {
+		Mailbox mb = open(junk ? junkMailbox() : MailboxConstants.INBOX);
+		try {
+			return mb.append(content, java.util.Set.of(), System.currentTimeMillis());
+		} finally {
+			registry.release(mb);
+		}
+	}
+
+	/**
+	 * The user's Junk mailbox: the one marked \\Junk (RFC 6154), else "Junk", created (and
+	 * marked) if missing.
+	 *
+	 * @since 1.1.0
+	 */
+	public String junkMailbox() throws IOException {
+		for (Entry e : listAll()) {
+			if (MailboxConstants.JUNK.equalsIgnoreCase(e.specialUse) && !e.noselect) {
+				return e.name;
+			}
+		}
+		if (!exists("Junk")) {
+			create("Junk", MailboxConstants.JUNK);
+		}
+		return "Junk";
 	}
 
 	/**

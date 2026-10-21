@@ -4,6 +4,9 @@
 
 ### Added
 
+- `MailStore.deliver(content, junk)`: the one way new mail gets into a store (SMTP's local delivery, or code putting
+  mail into a user's mailbox): to INBOX or the Junk mailbox through `Mailbox.append`, with CRLF line ends and an
+  index entry. `MailStore.junkMailbox()` (was in parley-smtp's LocalDelivery).
 - **Several servers on one store** (`parley.mail.sharedStore` = `off`, `host` or `cluster`; default `off`), on
   parley-net 1.1.0's locks: the servers of a JVM share one lock domain per maildrop root (`MailLocks`); a server
   claims the store when it starts (`AbstractMailServer.start()`), alone or shared, and is refused if another's
@@ -27,6 +30,8 @@
 
 ### Changed (no code change needed)
 
+- A MOVE that can't rename a file into the target writes the copy as `append` does (one place writes every new
+  message file); the whole move is still saved, or undone, at once.
 - The index has a `VERSION` line (a save count and a random save id). Earlier versions ignore it.
 - UIDNEXT never goes down, so a UID is never given twice, even after a save that failed.
 - A new UIDVALIDITY is always above the last one given in the store (kept in `.mail-uidvalidity`), so a mailbox
