@@ -58,6 +58,19 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
+			<!-- The test classes (MailTestSupport, MailTestAcl.txt) as parley-mail-<version>-tests.jar, shared by
+			     the mail protocols' tests (<type>test-jar</type><scope>test</scope>) so they never copy them. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-jar-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>test-jar</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 			<!-- Attaches the -sources.jar. The version comes from parley-parent; package (not deploy)
 			     so the source jar is attached BEFORE the deploy plugin runs. -->
 			<plugin>
