@@ -2,6 +2,16 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Added
+
+- **Settings the suite shares**, used by every mail server that has none of its own: `parley.mail.users`
+  (the user file, one `FileBasedAcl` per file in a JVM, read again when it changes;
+  `AbstractMailServer.sharedUsers(File)`) and `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType`.
+- `MailServerProvider`: the base of the mail servers' parley-net `ServerProvider`s; they read
+  `parley-mail.properties` before their own settings file, and are off when their port is 0.
+- A server refused the store because another server has it (`parley.mail.sharedStore=off`) says to set
+  `parley.mail.sharedStore=host` for servers in separate processes on one host.
+
 ### Changed (needs a configuration change)
 
 - **The maildrop root every mail server shares** is `parley.mail.root` (with `parley.mail.fileSource`):

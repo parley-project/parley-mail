@@ -28,6 +28,40 @@ Requires Java 11 or later. Depends on `parley-files` (which brings in `parley-co
 > response codes) moved from the `IMAP` interface to `MailboxConstants`, with the same values.
 > Mailboxes on disk are unchanged: the index format and file layout are the same.
 
+## Running the mail suite
+
+The servers (parley-smtp, parley-imap, parley-pop3) each offer parley-net `ServerProvider`s, so they
+run alone, several in one process, or under a service manager, as any user. Run one with its own
+`main` (`java ... us.bringardner.parley.pop3.server.Pop3Server`), or several with parley-net's
+launcher and every module on the class path:
+
+```
+java -cp ... us.bringardner.parley.net.server.ServerMain parley.servers smtp,submission,imap,pop3
+```
+
+| Id | Server | Port setting (default; 0 turns it off) |
+|---|---|---|
+| `smtp` | SMTP relay (MX) | `parley.mail.smtp.port` (25) |
+| `submission` | SMTP submission | `parley.mail.submission.port` (587) |
+| `submissions` | submission with implicit TLS | `parley.mail.submissions.port` (off unless set; 465) |
+| `imap` / `imaps` | IMAP / with implicit TLS | `parley.mail.imap.port` (143) / `parley.mail.imaps.port` (off unless set; 993) |
+| `pop3` / `pop3s` | POP3 / with implicit TLS | `parley.mail.pop3.port` (110) / `parley.mail.pop3s.port` (off unless set; 995) |
+
+Every mail server reads `parley-mail.properties` in the settings folder (`/etc/parley`, or the
+folder of the file `PARLEY_CONF` names) before its own file (`parley-smtp.properties`,
+`parley-imap.properties`, `parley-pop3.properties`). Settings the suite shares:
+
+| Setting | Meaning |
+|---|---|
+| `parley.mail.root` | The maildrop root |
+| `parley.mail.users` | The user file (parley-net's `FileBasedAcl` format) of every server that has no `<prefix>.authenticationProvider` of its own; one list per file in a JVM, read again when the file changes |
+| `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType` (PKCS12) | The TLS key store of every server that has no `<prefix>.keyStoreName` of its own |
+| `parley.mail.sharedStore` | `host` (or `cluster`) when servers in more than one process serve the root |
+
+Each server is a JMX bean, `us.bringardner.parley:type=Server,name=<id>` (state, port,
+connections, start, stop, restart), and SMTP's queue is
+`us.bringardner.parley:type=MailQueue,name=smtp`; see parley-net's README for the launcher.
+
 ## Build
 
 ```
