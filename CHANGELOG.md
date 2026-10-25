@@ -5,12 +5,14 @@
 ### Added
 
 - **Settings the suite shares**, used by every mail server that has none of its own: `parley.mail.users`
-  (the user file, one `FileBasedAcl` per file in a JVM, read again when it changes;
-  `AbstractMailServer.sharedUsers(File)`) and `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType`.
+  (the user file, read again when it changes; one `FileBasedAcl` per file for the servers of one launcher,
+  in its `ServerContext`, made through `AbstractMailServer.makeIn` and found with
+  `AbstractMailServer.sharedUsers(ServerContext, File)`) and `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType`.
 - `MailServerProvider`: the base of the mail servers' parley-net `ServerProvider`s; they read
   `parley-mail.properties` before their own settings file, and are off when their port is 0.
 - A server refused the store because another server has it (`parley.mail.sharedStore=off`) says to set
   `parley.mail.sharedStore=host` for servers in separate processes on one host.
+  With sharing on here, a refusal says the server that has the store must share it too.
 
 ### Changed (needs a configuration change)
 

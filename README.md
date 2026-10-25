@@ -54,7 +54,7 @@ folder of the file `PARLEY_CONF` names) before its own file (`parley-smtp.proper
 | Setting | Meaning |
 |---|---|
 | `parley.mail.root` | The maildrop root |
-| `parley.mail.users` | The user file (parley-net's `FileBasedAcl` format) of every server that has no `<prefix>.authenticationProvider` of its own; one list per file in a JVM, read again when the file changes |
+| `parley.mail.users` | The user file (parley-net's `FileBasedAcl` format) of every server that has no `<prefix>.authenticationProvider` of its own; read again when the file changes; the servers one launcher runs share one list per file (in its `ServerContext`), a server made by code has its own |
 | `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType` (PKCS12) | The TLS key store of every server that has no `<prefix>.keyStoreName` of its own |
 | `parley.mail.sharedStore` | `host` (or `cluster`) when servers in more than one process serve the root |
 
