@@ -196,7 +196,9 @@ public abstract class AbstractMailServer extends Server {
 		String f = us.bringardner.parley.mail.store.MailLocks.STORE_SETTINGS_FILE;
 		String p = us.bringardner.parley.mail.store.MailLocks.SHARING;
 		String hint;
-		if (sharing == null || sharing == us.bringardner.parley.net.lock.Sharing.OFF) {
+		if (e.getMessage() != null && e.getMessage().contains("has the id")) {
+			hint = "; give each server sharing the store its own id (its serverId setting)";
+		} else if (sharing == null || sharing == us.bringardner.parley.net.lock.Sharing.OFF) {
 			hint = "; the store's settings (" + f + ") say " + p + "=off: one server at a time. For servers to share it, set "
 					+ p + "=host there (cluster for several hosts)";
 		} else {
@@ -326,7 +328,9 @@ public abstract class AbstractMailServer extends Server {
 				lockDomain = us.bringardner.parley.mail.store.MailLocks.acquire(getMaildropRoot());
 				sharing = lockDomain.options().sharing();
 				String id = getProperty(propertyName(us.bringardner.parley.mail.store.MailLocks.SERVER_ID));
-				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(id, getName(), getPort()));
+				// a server on a port the system picks (0) has no port yet: its default id is its own
+				String name = getPort() > 0 ? getName() : getName() + "-" + Integer.toHexString(System.identityHashCode(this));
+				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(id, name, getPort()));
 				claimed = true;
 			} catch (IOException e) {
 				releaseStoreClaim();
