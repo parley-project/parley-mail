@@ -17,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import us.bringardner.parley.net.lock.Sharing;
 import us.bringardner.parley.net.lock.StoreClaimException;
 import us.bringardner.parley.net.server.FileBasedAcl;
 import us.bringardner.parley.net.server.IAccessControlList;
@@ -116,15 +117,39 @@ public class TestSharedSettings {
 	@Test
 	public void aRefusedStoreSaysWhatToShare() {
 		IOException plain = new IOException("disk");
-		assertSame(plain, AbstractMailServer.withSharingHint(plain));
+		assertSame(plain, AbstractMailServer.withSharingHint(plain, Sharing.OFF));
 
-		IOException off = AbstractMailServer.withSharingHint(new StoreClaimException("The store /mail is in use by another server"));
+		IOException off = AbstractMailServer.withSharingHint(new StoreClaimException("The store /mail is in use by another server"), Sharing.OFF);
 		assertTrue(off.getMessage().startsWith("The store /mail is in use by another server"), off.getMessage());
-		assertTrue(off.getMessage().contains("parley.mail.sharedStore=host"), off.getMessage());
+		assertTrue(off.getMessage().contains(".parley-store.properties") && off.getMessage().contains("sharing=host"), off.getMessage());
 
-		System.setProperty("parley.mail.sharedStore", "host");
-		IOException on = AbstractMailServer.withSharingHint(new StoreClaimException("The store /mail is claimed by a server that doesn't share it"));
-		assertTrue(on.getMessage().contains("runs with parley.mail.sharedStore=off"), on.getMessage());
-		assertTrue(on.getMessage().contains("(host)"), on.getMessage());
+		IOException on = AbstractMailServer.withSharingHint(new StoreClaimException("The store /mail is claimed by a server that doesn't share it"), Sharing.HOST);
+		assertTrue(on.getMessage().contains("doesn't share it"), on.getMessage());
+	}
+
+	/** Two servers of one launcher, each made from its own configuration: one name, two values. */
+	@Test
+	public void eachServerReadsItsOwnConfiguration() throws Exception {
+		File usersA = file("a.txt", "tony,secret,READ\n");
+		File usersB = file("b.txt", "jose,other,READ\n");
+		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, file("system.txt", "sys,x,READ\n").getPath());
+		java.util.Properties ca = new java.util.Properties();
+		ca.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersA.getPath());
+		java.util.Properties cb = new java.util.Properties();
+		cb.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersB.getPath());
+		Plain a = AbstractMailServer.makeIn(one, ca, () -> new Plain("parley.mail.a"));
+		Plain b = AbstractMailServer.makeIn(one, cb, () -> new Plain("parley.mail.a"));
+		assertNotNull(a.getAccessControl().getPrincipal("tony"));
+		assertNull(a.getAccessControl().getPrincipal("jose"));
+		assertNotNull(b.getAccessControl().getPrincipal("jose"));
+		assertNull(b.getAccessControl().getPrincipal("sys"), "not the system properties");
+		assertSame(ca, a.getConfiguration());
+	}
+
+	@Test
+	public void aServerWithoutAMaildropRootDoesntStart() {
+		Plain p = new Plain("parley.mail.a");
+		java.io.UncheckedIOException e = org.junit.jupiter.api.Assertions.assertThrows(java.io.UncheckedIOException.class, p::start);
+		assertTrue(e.getMessage().contains(AbstractMailServer.MAIL_ROOT_PROP), e.getMessage());
 	}
 }

@@ -70,7 +70,7 @@ public abstract class AbstractMailServer extends Server {
 	private void useSharedSettings() {
 		sharedAcl = false;
 		sharedKeyStore = false;
-		String users = System.getProperty(MAIL_USERS_PROP);
+		String users = getProperty(MAIL_USERS_PROP);
 		if (users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
 			try {
 				setAccessControl(sharedUsers(new java.io.File(users.trim())));
@@ -79,14 +79,14 @@ public abstract class AbstractMailServer extends Server {
 				throw new java.io.UncheckedIOException("Can't read the users file " + users + " (" + MAIL_USERS_PROP + ")", e);
 			}
 		}
-		String keyStore = System.getProperty(MAIL_TLS_KEY_STORE_PROP);
+		String keyStore = getProperty(MAIL_TLS_KEY_STORE_PROP);
 		if (keyStore != null && !keyStore.trim().isEmpty() && getProperty(propertyName(PROPERTY_KEY_STORE_NAME)) == null) {
 			setKeyStoreFileName(keyStore.trim());
-			String password = System.getProperty(MAIL_TLS_KEY_STORE_PASSWORD_PROP);
+			String password = getProperty(MAIL_TLS_KEY_STORE_PASSWORD_PROP);
 			if (password != null) {
 				setKeyStorePassword(password);
 			}
-			setKeyStoreType(System.getProperty(MAIL_TLS_KEY_STORE_TYPE_PROP, "PKCS12"));
+			setKeyStoreType(getProperty(MAIL_TLS_KEY_STORE_TYPE_PROP, "PKCS12"));
 			sharedKeyStore = true;
 		}
 		sharedSettingsUsed = true;
@@ -154,10 +154,23 @@ public abstract class AbstractMailServer extends Server {
 	 * (see {@link #MAIL_USERS_PROP}). For {@link ServerProvider#create(ServerContext)}.
 	 */
 	public static <T extends AbstractMailServer> T makeIn(ServerContext context, java.util.concurrent.Callable<T> make) throws Exception {
+		return makeIn(context, null, make);
+	}
+
+	/**
+	 * Make a mail server for a launcher, from its own configuration: everything it reads, in its
+	 * constructor too, comes from the configuration (see parley-core's {@code BaseObject.makeWith}),
+	 * not the system properties. For {@link ServerProvider#create(ServerContext, java.util.Properties)}.
+	 *
+	 * @param configuration the server's own settings, or null for the system properties
+	 * @since 2.0.0
+	 */
+	public static <T extends AbstractMailServer> T makeIn(ServerContext context, java.util.Properties configuration,
+			java.util.concurrent.Callable<T> make) throws Exception {
 		ServerContext before = MAKING_IN.get();
 		MAKING_IN.set(context);
 		try {
-			return make.call();
+			return us.bringardner.parley.core.BaseObject.makeWith(configuration, make);
 		} finally {
 			if (before == null) {
 				MAKING_IN.remove();
@@ -173,24 +186,23 @@ public abstract class AbstractMailServer extends Server {
 	}
 
 	/**
-	 * A refused store claim, with what to do about it: with sharing off here, the store may be
-	 * another process's on this host; with sharing on, the server that has it doesn't share it.
+	 * A refused store claim, with what to do about it: with sharing off, the store may be another
+	 * server's (in this process or another); with sharing on, the server that has it doesn't share it.
 	 */
-	static IOException withSharingHint(IOException e) {
+	static IOException withSharingHint(IOException e, us.bringardner.parley.net.lock.Sharing sharing) {
 		if (!(e instanceof us.bringardner.parley.net.lock.StoreClaimException)) {
 			return e;
 		}
-		String p = us.bringardner.parley.mail.store.MailLocks.SHARED_STORE_PROPERTY;
+		String f = us.bringardner.parley.mail.store.MailLocks.STORE_SETTINGS_FILE;
+		String p = us.bringardner.parley.mail.store.MailLocks.SHARING;
 		String hint;
-		if (us.bringardner.parley.mail.store.MailLocks.sharing() == us.bringardner.parley.net.lock.Sharing.OFF) {
-			hint = "; for servers in separate processes on this host to share it, set " + p
-					+ "=host (cluster for several hosts) for every one of them, or run them in one process (parley.servers)";
+		if (sharing == null || sharing == us.bringardner.parley.net.lock.Sharing.OFF) {
+			hint = "; the store's settings (" + f + ") say " + p + "=off: one server at a time. For servers to share it, set "
+					+ p + "=host there (cluster for several hosts)";
 		} else {
-			hint = "; the server that has it runs with " + p + "=off: set " + p + " the same way ("
-					+ us.bringardner.parley.mail.store.MailLocks.sharing().name().toLowerCase(java.util.Locale.ROOT) + ") there too";
+			hint = "; the server that has it doesn't share it";
 		}
-		IOException ret = new IOException(e.getMessage() + hint, e);
-		return ret;
+		return new IOException(e.getMessage() + hint, e);
 	}
 
 	/** Called by a subclass's constructor once it has finished its own set up. */
@@ -199,7 +211,8 @@ public abstract class AbstractMailServer extends Server {
 	}
 
 	/**
-	 * Find the maildrop root from the system properties.
+	 * Find the maildrop root from this server's settings. It has no default: without one the
+	 * server doesn't start.
 	 *
 	 * @param fileSourceProp the property naming the file source factory (null if not set)
 	 * @param legacyFileSourceProp another property to try for it, or null
@@ -215,8 +228,8 @@ public abstract class AbstractMailServer extends Server {
 			factory = FileSourceFactory.getFileSourceFactory(tmp.toLowerCase(Locale.ROOT));
 		}
 		tmp = property(rootProp, legacyRootProp);
-		if (tmp == null) {
-			tmp = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win") ? defaultRootWindows : defaultRoot;
+		if (tmp == null || tmp.trim().isEmpty()) {
+			return; // required: start() says so
 		}
 		try {
 			maildropRoot = factory.createFileSource(tmp);
@@ -225,9 +238,9 @@ public abstract class AbstractMailServer extends Server {
 		}
 	}
 
-	private static String property(String name, String legacy) {
-		String ret = System.getProperty(name);
-		return ret == null && legacy != null ? System.getProperty(legacy) : ret;
+	private String property(String name, String legacy) {
+		String ret = name == null ? null : getProperty(name);
+		return ret == null && legacy != null ? getProperty(legacy) : ret;
 	}
 
 	/** Say so when no one can log in. */
@@ -269,9 +282,9 @@ public abstract class AbstractMailServer extends Server {
 
 	// ------------------------------------------------------------------ autologout
 
-	/** Start with this idle time (ms), from a system property. Doesn't call {@link #onAutologoutChanged(int)}. */
+	/** Start with this idle time (ms), from this server's settings. Doesn't call {@link #onAutologoutChanged(int)}. */
 	protected void initAutologout(String property, int defaultValue) {
-		autologout = Integer.getInteger(property, defaultValue);
+		autologout = getIntProperty(property, defaultValue);
 	}
 
 	public int getAutologout() {
@@ -295,20 +308,29 @@ public abstract class AbstractMailServer extends Server {
 
 	/**
 	 * Claim the maildrop root (see {@link us.bringardner.parley.mail.store.MailLocks}) before
-	 * accepting connections: with {@code parley.mail.sharedStore} off, a second server on it is
-	 * refused; shared, servers that share it are let in. Fails to start if the claim fails.
+	 * accepting connections: with the store's sharing off, a second server on it is refused (in this
+	 * JVM or another); shared, servers that share it are let in. Fails to start if the store has no
+	 * settings, the maildrop root isn't configured or the claim fails.
 	 */
 	@Override
 	public synchronized void start() {
+		if (maildropRoot == null) {
+			IOException err = new IOException("The maildrop root is not configured (" + getRootProperty() + ")");
+			logError("Can't start " + getName() + ": " + err.getMessage(), err);
+			throw new java.io.UncheckedIOException(err);
+		}
 		boolean claimed = false;
-		if (storeClaim == null && maildropRoot != null) {
+		if (storeClaim == null) {
+			us.bringardner.parley.net.lock.Sharing sharing = null;
 			try {
 				lockDomain = us.bringardner.parley.mail.store.MailLocks.acquire(getMaildropRoot());
-				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(getName(), getPort()));
+				sharing = lockDomain.options().sharing();
+				String id = getProperty(propertyName(us.bringardner.parley.mail.store.MailLocks.SERVER_ID));
+				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(id, getName(), getPort()));
 				claimed = true;
 			} catch (IOException e) {
 				releaseStoreClaim();
-				IOException err = withSharingHint(e);
+				IOException err = withSharingHint(e, sharing);
 				logError("Can't start " + getName() + ": " + err.getMessage(), err);
 				throw new java.io.UncheckedIOException(err);
 			}

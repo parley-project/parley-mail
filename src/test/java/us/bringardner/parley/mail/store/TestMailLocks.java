@@ -2,6 +2,7 @@ package us.bringardner.parley.mail.store;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -29,20 +30,26 @@ public class TestMailLocks {
 	}
 
 	@Test
-	public void theSharingComesFromTheProperty() {
-		String before = System.getProperty(MailLocks.SHARED_STORE_PROPERTY);
+	public void theSharingComesFromTheStore() throws Exception {
+		FileSource root = SharedStoreSupport.newRoot();
+		assertSame(Sharing.CLUSTER, MailLocks.sharing(root));
+		MailLocks.writeStoreSettings(root, Sharing.OFF);
+		assertSame(Sharing.OFF, MailLocks.sharing(root));
+		System.setProperty("parley.mail.sharedStore", "cluster");
 		try {
-			System.clearProperty(MailLocks.SHARED_STORE_PROPERTY);
-			assertSame(Sharing.OFF, MailLocks.sharing());
-			System.setProperty(MailLocks.SHARED_STORE_PROPERTY, "cluster");
-			assertSame(Sharing.CLUSTER, MailLocks.sharing());
+			assertSame(Sharing.OFF, MailLocks.sharing(root), "not a system property: the store says");
 		} finally {
-			if (before == null) {
-				System.clearProperty(MailLocks.SHARED_STORE_PROPERTY);
-			} else {
-				System.setProperty(MailLocks.SHARED_STORE_PROPERTY, before);
-			}
+			System.clearProperty("parley.mail.sharedStore");
 		}
+	}
+
+	@Test
+	public void aStoreWithoutSettingsIsRefused() throws Exception {
+		java.io.File d = java.nio.file.Files.createTempDirectory("parley-mail-nosettings").toFile();
+		d.deleteOnExit();
+		FileSource root = us.bringardner.parley.files.FileSourceFactory.getDefaultFactory().createFileSource(d.getCanonicalPath());
+		java.io.IOException e = assertThrows(java.io.IOException.class, () -> MailLocks.acquire(root));
+		assertTrue(e.getMessage().contains(MailLocks.STORE_SETTINGS_FILE), e.getMessage());
 	}
 
 	@Test

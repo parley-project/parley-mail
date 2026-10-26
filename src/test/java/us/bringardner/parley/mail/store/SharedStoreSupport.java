@@ -24,7 +24,9 @@ final class SharedStoreSupport {
 	static FileSource newRoot() throws IOException {
 		File d = Files.createTempDirectory("parley-mail-shared").toFile();
 		d.deleteOnExit();
-		return FileSourceFactory.getDefaultFactory().createFileSource(d.getCanonicalPath());
+		FileSource root = FileSourceFactory.getDefaultFactory().createFileSource(d.getCanonicalPath());
+		MailLocks.writeStoreSettings(root, Sharing.CLUSTER); // made by an administrator
+		return root;
 	}
 
 	/** A server: leases on a local directory (they work between Locks in one JVM, like servers). */
