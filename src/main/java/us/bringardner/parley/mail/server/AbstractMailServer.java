@@ -121,8 +121,12 @@ public abstract class AbstractMailServer extends Server {
 		if (context == null) {
 			return users(key);
 		}
+		// the list's own setting (how often it reads the file) is part of what is shared: servers
+		// whose settings differ get lists of their own, so none gets another server's
+		String reload = getProperty(us.bringardner.parley.net.server.FileBasedAcl.PROP_RELOAD_SECONDS);
+		String sharedKey = SHARED_USERS_KEY + key.getPath() + (reload == null ? "" : "|" + reload.trim());
 		try {
-			return context.shared(SHARED_USERS_KEY + key.getPath(), us.bringardner.parley.net.server.FileBasedAcl.class, () -> users(key));
+			return context.shared(sharedKey, us.bringardner.parley.net.server.FileBasedAcl.class, () -> users(key));
 		} catch (IOException | RuntimeException e) {
 			throw e;
 		} catch (Exception e) {
@@ -137,6 +141,11 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	public static us.bringardner.parley.net.server.FileBasedAcl sharedUsers(ServerContext context, java.io.File file) throws IOException {
 		Object o = context.get(SHARED_USERS_KEY + file.getCanonicalFile().getPath());
+		if (o == null) {
+			// one with a reload setting of its own
+			String prefix = SHARED_USERS_KEY + file.getCanonicalFile().getPath() + "|";
+			o = context.sharedKeys().stream().filter(k -> k.startsWith(prefix)).findFirst().map(context::get).orElse(null);
+		}
 		return o instanceof us.bringardner.parley.net.server.FileBasedAcl ? (us.bringardner.parley.net.server.FileBasedAcl) o : null;
 	}
 
@@ -332,9 +341,10 @@ public abstract class AbstractMailServer extends Server {
 				String name = getPort() > 0 ? getName() : getName() + "-" + Integer.toHexString(System.identityHashCode(this));
 				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(id, name, getPort()));
 				claimed = true;
-			} catch (IOException e) {
+			} catch (IOException | RuntimeException e) {
 				releaseStoreClaim();
-				IOException err = withSharingHint(e, sharing);
+				IOException err = e instanceof IOException ? withSharingHint((IOException) e, sharing)
+						: new IOException(e.getMessage() != null ? e.getMessage() : e.toString(), e);
 				logError("Can't start " + getName() + ": " + err.getMessage(), err);
 				throw new java.io.UncheckedIOException(err);
 			}
@@ -349,6 +359,9 @@ public abstract class AbstractMailServer extends Server {
 		} catch (IOException e) {
 			logError("Can't start " + getName() + ": " + e.getMessage(), e);
 			throw new java.io.UncheckedIOException(e);
+		} catch (java.io.UncheckedIOException e) {
+			logError("Can't start " + getName() + ": " + e.getCause().getMessage(), e.getCause());
+			throw e;
 		} finally {
 			if (!started) {
 				if (prepared) {

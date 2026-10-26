@@ -19,10 +19,11 @@ import us.bringardner.parley.net.lock.Sharing;
  * The store carries its own settings, so the servers that use it can't disagree about them: the
  * file {@value #STORE_SETTINGS_FILE} in the maildrop root. {@value #SHARING} is how many servers
  * share the store: {@code off} (one server; its claim keeps a second out, in this JVM or another),
- * {@code host} (several on one machine) or {@code cluster} (several anywhere). {@value #LOCK_DOMAIN}
- * is the lock domain's name (default {@code mail}). A store without the file isn't used: making it
- * is an administrator's job ({@link #writeStoreSettings(FileSource, Sharing)}). How the locks are
- * kept between servers follows parley-net's settings ({@code parley.net.lock.provider}, ...).
+ * {@code host} (several on one machine) or {@code cluster} (several anywhere); it is required.
+ * {@value #LOCK_DOMAIN} is the lock domain's name (default {@code mail}); {@value #LOCK_PROVIDER}
+ * and {@value #ALLOW_UNSAFE} say how its locks are kept between servers (parley-net's providers;
+ * default {@code auto}, and false). A store without the file isn't used: making it is an
+ * administrator's job ({@link #writeStoreSettings(FileSource, Sharing)}).
  */
 public final class MailLocks {
 
@@ -32,6 +33,10 @@ public final class MailLocks {
 	public static final String SHARING = "sharing";
 	/** Store setting: the lock domain's name (default {@code mail}); the same for every server */
 	public static final String LOCK_DOMAIN = "lockDomain";
+	/** Store setting: how its locks are kept between servers ({@code auto}, the default, {@code region}, {@code lease} or a class name; parley-net) */
+	public static final String LOCK_PROVIDER = "lockProvider";
+	/** Store setting: allow a lock provider whose locks wouldn't reach every server (default false; parley-net) */
+	public static final String ALLOW_UNSAFE = "allowUnsafe";
 	/** Server setting: this server's id among those that share the store (default: host, server name, port). */
 	public static final String SERVER_ID = "serverId";
 
@@ -64,7 +69,21 @@ public final class MailLocks {
 
 	/** @return how many servers share the store, from its settings */
 	public static Sharing sharing(FileSource root) throws IOException {
-		return Sharing.parse(storeSettings(root).getProperty(SHARING));
+		return sharing(storeSettings(root), root);
+	}
+
+	/** The required {@value #SHARING} setting: it has no default */
+	private static Sharing sharing(Properties settings, FileSource root) throws IOException {
+		String v = settings.getProperty(SHARING);
+		String where = " (" + root.getAbsolutePath() + "/" + STORE_SETTINGS_FILE + ")";
+		if( v == null || v.trim().isEmpty() ) {
+			throw new IOException("The mail store's " + SHARING + " isn't set (off, host or cluster)" + where);
+		}
+		try {
+			return Sharing.parse(v.trim());
+		} catch (IllegalArgumentException e) {
+			throw new IOException("The mail store's " + SHARING + "=" + v.trim() + " isn't off, host or cluster" + where, e);
+		}
 	}
 
 	/**
@@ -105,15 +124,29 @@ public final class MailLocks {
 		LockDomain d = DOMAINS.get(key);
 		if( d == null ) {
 			Properties settings = storeSettings(root);
-			Sharing sharing = Sharing.parse(settings.getProperty(SHARING));
+			Sharing sharing = sharing(settings, root);
 			String name = settings.getProperty(LOCK_DOMAIN, "mail").trim();
 			if( locks().domain(name) != null ) {
-				// another root in this JVM already has the name (tests, several stores): give this
-				// one its own, from its path
+				if( locks().options().coordinationStore() != null ) {
+					// the name is what the servers' locks meet by there: it can't be changed here
+					throw new IOException("Two mail stores in this JVM have the " + LOCK_DOMAIN + " " + name
+							+ ": give each store its own (" + root.getAbsolutePath() + "/" + STORE_SETTINGS_FILE + ")");
+				}
+				// another store in this JVM has the name; without a coordination store the name
+				// isn't part of the locks, so this one gets its own, from its path
 				name = name + "-" + Integer.toHexString(key.hashCode());
+				for( int i = 2; locks().domain(name) != null; i++ ) {
+					name = name + "-" + i;
+				}
 			}
-			// the store's own sharing (so it can differ between stores)
-			d = locks().domain(name, root, locks().options().withSharing(sharing));
+			// the store's own settings: its sharing, and how its locks are kept
+			us.bringardner.parley.net.lock.LockOptions o = locks().options().withSharing(sharing);
+			String provider = settings.getProperty(LOCK_PROVIDER);
+			if( provider != null && !provider.trim().isEmpty() ) {
+				o = o.withProvider(provider.trim());
+			}
+			o = o.withAllowUnsafe(Boolean.parseBoolean(settings.getProperty(ALLOW_UNSAFE, "false").trim()));
+			d = locks().domain(name, root, o);
 			DOMAINS.put(key, d);
 			MailboxRegistry.get().useLocks(d);
 		}

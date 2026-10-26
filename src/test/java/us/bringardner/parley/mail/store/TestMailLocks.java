@@ -63,4 +63,40 @@ public class TestMailLocks {
 			MailLocks.release(d);
 		}
 	}
+
+	private static FileSource emptyRoot() throws Exception {
+		java.io.File d = java.nio.file.Files.createTempDirectory("parley-mail-settings").toFile();
+		d.deleteOnExit();
+		return us.bringardner.parley.files.FileSourceFactory.getDefaultFactory().createFileSource(d.getCanonicalPath());
+	}
+
+	private static void write(FileSource root, String text) throws Exception {
+		try (java.io.OutputStream out = root.getChild(MailLocks.STORE_SETTINGS_FILE).getOutputStream()) {
+			out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+	}
+
+	@Test
+	public void sharingIsRequiredAndChecked() throws Exception {
+		FileSource root = emptyRoot();
+		write(root, "lockDomain=mail\n");
+		java.io.IOException e = assertThrows(java.io.IOException.class, () -> MailLocks.acquire(root));
+		assertTrue(e.getMessage().contains("sharing isn't set"), e.getMessage());
+		write(root, "sharing=hots\n");
+		e = assertThrows(java.io.IOException.class, () -> MailLocks.acquire(root));
+		assertTrue(e.getMessage().contains("hots"), e.getMessage());
+	}
+
+	@Test
+	public void howTheLocksAreKeptComesFromTheStore() throws Exception {
+		FileSource root = emptyRoot();
+		write(root, "sharing=host\nlockProvider=lease\n");
+		LockDomain d = MailLocks.acquire(root);
+		try {
+			assertTrue("lease".equals(d.options().provider()), d.options().provider());
+			assertSame(Sharing.HOST, d.options().sharing());
+		} finally {
+			MailLocks.release(d);
+		}
+	}
 }

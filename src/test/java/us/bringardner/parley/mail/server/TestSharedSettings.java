@@ -152,4 +152,29 @@ public class TestSharedSettings {
 		java.io.UncheckedIOException e = org.junit.jupiter.api.Assertions.assertThrows(java.io.UncheckedIOException.class, p::start);
 		assertTrue(e.getMessage().contains(AbstractMailServer.MAIL_ROOT_PROP), e.getMessage());
 	}
+
+	/** A refused start gives back what it took: the store's lock domain and claim. */
+	@Test
+	public void aRefusedStartLeavesNothingBehind() throws Exception {
+		us.bringardner.parley.files.FileSource root = us.bringardner.parley.files.FileSourceFactory.getDefaultFactory()
+				.createFileSource(new File(dir, "store").getPath());
+		us.bringardner.parley.mail.store.MailLocks.writeStoreSettings(root, Sharing.OFF);
+		Plain first = new Plain("parley.mail.a");
+		first.setMaildropRoot(root);
+		Plain second = new Plain("parley.mail.b");
+		second.setMaildropRoot(root);
+		first.start();
+		try {
+			java.io.UncheckedIOException e = org.junit.jupiter.api.Assertions.assertThrows(java.io.UncheckedIOException.class, second::start,
+					"sharing off: one server at a time, in this JVM too");
+			assertTrue(e.getMessage().contains("in use by another server"), e.getMessage());
+		} finally {
+			first.stop();
+		}
+		root.getChild("tony").mkdirs();
+		assertNull(us.bringardner.parley.mail.store.MailboxRegistry.get().domainOf(root.getChild("tony")),
+				"the refused server let go of the store's lock domain too");
+		second.start(); // and the store is free
+		second.stop();
+	}
 }
