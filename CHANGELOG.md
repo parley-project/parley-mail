@@ -2,6 +2,17 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-10-26: each server alone, shared assets carry their own settings)
+
+- **Each mail server reads only its own configuration** (`AbstractMailServer.makeIn(context, configuration, make)`),
+  never the system properties when it has one, and nothing changes when servers share a process.
+- **The store carries its own settings**: `.parley-store.properties` in the maildrop root (`sharing`: off, host or
+  cluster; `lockDomain`), read by every server that uses it. It replaces the settings `parley.mail.sharedStore`
+  and `parley.mail.lockDomain`, which are no longer read. A store without it isn't used (`MailLocks.writeStoreSettings`).
+  Servers in one process count as several servers: the mail suite's servers on one root need `sharing=host`.
+- **`parley.mail.root` is required**: the default `/pop3` (`C:/pop3`) is gone, and a server without one doesn't start.
+- **A server's store id** is its own `<prefix>.serverId` (was the JVM-wide `parley.mail.serverId`).
+
 ### Added
 
 - **Settings the suite shares**, used by every mail server that has none of its own: `parley.mail.users`

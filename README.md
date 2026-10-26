@@ -47,20 +47,38 @@ java -cp ... us.bringardner.parley.net.server.ServerMain parley.servers smtp,sub
 | `imap` / `imaps` | IMAP / with implicit TLS | `parley.mail.imap.port` (143) / `parley.mail.imaps.port` (off unless set; 993) |
 | `pop3` / `pop3s` | POP3 / with implicit TLS | `parley.mail.pop3.port` (110) / `parley.mail.pop3s.port` (off unless set; 995) |
 
-Every mail server reads `parley-mail.properties` in the settings folder (`/etc/parley`, or the
-folder of the file `PARLEY_CONF` names) before its own file (`parley-smtp.properties`,
-`parley-imap.properties`, `parley-pop3.properties`). Settings the suite shares:
+Each mail server is written as if it were the only server: it is made from a configuration of its
+own and reads nothing else (not the system properties, not another server's settings), so nothing
+changes when it shares a process with other servers. The launcher builds each server's
+configuration from `parley-mail.properties` in the settings folder (`/etc/parley`, or the folder of
+the file `PARLEY_CONF` names), then its own file (`parley-smtp.properties`, `parley-imap.properties`,
+`parley-pop3.properties`), then the JVM's `-D` options and the command line. A setting's name means
+the same to every server; its value is each server's own. Settings every mail server reads (with no
+prefix of its own):
 
 | Setting | Meaning |
 |---|---|
-| `parley.mail.root` | The maildrop root |
+| `parley.mail.root` | The maildrop root (required: a server without one doesn't start) |
 | `parley.mail.users` | The user file (parley-net's `FileBasedAcl` format) of every server that has no `<prefix>.authenticationProvider` of its own; read again when the file changes; the servers one launcher runs share one list per file (in its `ServerContext`), a server made by code has its own |
 | `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType` (PKCS12) | The TLS key store of every server that has no `<prefix>.keyStoreName` of its own |
-| `parley.mail.sharedStore` | `host` (or `cluster`) when servers in more than one process serve the root |
+A server's own settings use its prefix (`parley.mail.pop3`, `parley.mail.pop3s`, ...), with no
+fallback from one prefix to another; its id among the servers sharing a store is
+`<prefix>.serverId` (default: host, name and port).
+
+**The store carries its own settings**: `.parley-store.properties` in the maildrop root, read by
+every server that uses it, so they can't disagree:
+
+| Store setting | Meaning |
+|---|---|
+| `sharing` | `off`: one server at a time (its claim refuses a second, in the same process or another); `host`: several servers on one machine; `cluster`: several anywhere. Servers in one process count as several servers: the mail suite's servers sharing one root need `host` |
+| `lockDomain` | The lock domain's name (default `mail`); the same for every server |
+
+A store without the file isn't used: making it is an administrator's job
+(`MailLocks.writeStoreSettings(root, Sharing.HOST)`).
 
 Each server is a JMX bean, `us.bringardner.parley:type=Server,name=<id>` (state, port,
-connections, start, stop, restart), and SMTP's queue is
-`us.bringardner.parley:type=MailQueue,name=smtp`; see parley-net's README for the launcher.
+connections, start, stop, restart), and each SMTP server's queue is
+`us.bringardner.parley:type=MailQueue,name=<id>`; see parley-net's README for the launcher.
 
 ## Build
 
@@ -78,7 +96,7 @@ Tests run with a 64 MB heap, so the large-message tests only pass if message bod
 - **Index:** each mailbox has a hidden `.imap-index` file holding UIDVALIDITY, UIDNEXT, and each message's UID, flags and INTERNALDATE. It is replaced safely (temp file, then rename). UIDs are never reused. Message files themselves are never modified, except for the next point.
 - **Line ends:** a message file found with bare LF line ends is rewritten once with CRLF, so the sizes IMAP reports are exact.
 - **Sharing within a server:** sessions in the same process share one `Mailbox` object per directory (`MailboxRegistry`), so changes reach other sessions at once (EXISTS, EXPUNGE and FETCH FLAGS, which include UID). Changes made outside the server, such as POP3 or delivery, are found by rescanning the directory, at most once a second.
-- **Several servers on one store** (`parley.mail.sharedStore`): `off` (the default) means one server process serves the root, and its claim on the store refuses a second; `host` lets several servers on one machine share it, and `cluster` several on any machines. The locks come from parley-net (`us.bringardner.parley.net.lock`): the servers of a JVM share one lock domain for the maildrop root (`MailLocks`, named by `parley.mail.lockDomain`, default `mail`), kept the best way the store allows (its own locks on a local disk or PostgreSQL/MySQL, lease directories on FTP or SFTP; see parley-net's README for `parley.net.lock.provider` and the rules that keep servers from keeping one store's locks differently). With sharing on:
+- **Several servers on one store** (the store's `sharing` setting): `off` means one server serves the root, and its claim on the store refuses a second, whether it is in the same process or another; `host` lets several servers on one machine share it, and `cluster` several on any machines. The locks come from parley-net (`us.bringardner.parley.net.lock`): the servers of a JVM use one lock domain for the maildrop root (`MailLocks`, named by the store's `lockDomain`, default `mail`), each with a claim of its own, kept the best way the store allows (its own locks on a local disk or PostgreSQL/MySQL, lease directories on FTP or SFTP; see parley-net's README for `parley.net.lock.provider` and the rules that keep servers from keeping one store's locks differently). With sharing on:
   - every change to a mailbox (APPEND, COPY, MOVE, EXPUNGE, a rescan) runs under its lock, after catching up with the index another server saved, and saves before the lock goes. Each save has a random id, checked with UIDVALIDITY, so a mailbox another server deleted and made again is never taken for the old one: sessions that have it selected are told to close it. The last UIDVALIDITY given is kept in the store (`.mail-uidvalidity` in the maildrop root, under the lock `uidvalidity`), so a mailbox made again by another server, or after a restart, gets a new one even within the same second.
   - UIDNEXT only goes up, so no UID is ever given twice; an APPEND whose index can't be saved takes its message back out, so a client that tries again doesn't get it twice.
   - flag changes are kept in memory and saved by the next change (or the next rescan, at most a second later), replayed on the latest index, so two servers' flag changes to one message are both kept.
