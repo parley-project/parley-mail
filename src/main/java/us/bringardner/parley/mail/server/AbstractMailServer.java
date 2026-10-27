@@ -21,6 +21,8 @@ public abstract class AbstractMailServer extends Server {
 	public static final String MAIL_ROOT_PROP = "parley.mail.root";
 	/** The FileSource factory for {@link #MAIL_ROOT_PROP} (the default factory if not set). */
 	public static final String MAIL_FILE_SOURCE_PROP = "parley.mail.fileSource";
+	/** Why the maildrop root couldn't be opened (start() refuses with it), or null */
+	private volatile String rootError;
 	/**
 	 * The user file every mail server uses when it has no access control of its own (no
 	 * {@code <prefix>.authenticationProvider}), read again when the file changes. The servers a
@@ -234,19 +236,79 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	protected void initMaildropRoot(String fileSourceProp, String legacyFileSourceProp, String rootProp,
 			String legacyRootProp, String defaultRoot, String defaultRootWindows) {
-		String tmp = property(fileSourceProp, legacyFileSourceProp);
-		if (tmp != null) {
-			factory = FileSourceFactory.getFileSourceFactory(tmp.toLowerCase(Locale.ROOT));
-		}
-		tmp = property(rootProp, legacyRootProp);
+		rootError = null;
+		String tmp = property(rootProp, legacyRootProp);
 		if (tmp == null || tmp.trim().isEmpty()) {
 			return; // required: start() says so
 		}
+		String root = tmp.trim();
+		String source = property(fileSourceProp, legacyFileSourceProp);
 		try {
-			maildropRoot = factory.createFileSource(tmp);
-		} catch (IOException e) {
-			logInfo("Error attempting to set the maildrop root " + tmp + " using the " + factory.getTypeId() + " factory");
+			if (root.regionMatches(true, 0, FILESOURCE_URL_SCHEME, 0, FILESOURCE_URL_SCHEME.length())) {
+				// a filesource: URL names its file system and connection settings itself
+				maildropRoot = FileSourceFactory.getFileSource(root);
+				factory = maildropRoot.getFileSourceFactory();
+				return;
+			}
+			if (source != null && !source.trim().isEmpty()) {
+				FileSourceFactory f = FileSourceFactory.getFileSourceFactory(source.trim().toLowerCase(Locale.ROOT));
+				if (f == null) {
+					throw new IOException("There is no file system " + source.trim() + " (" + fileSourceProp + ")");
+				}
+				java.util.Properties connection = connectionSettings(fileSourceProp + ".");
+				if (!connection.isEmpty()) {
+					f.setConnectionProperties(connection);
+				}
+				factory = f;
+			}
+			// (some file systems connect when first used, others don't: connect it here)
+			if (!factory.isConnected() && !factory.connect()) {
+				throw new IOException("Can't connect");
+			}
+			maildropRoot = factory.createFileSource(root);
+		} catch (IOException | RuntimeException e) {
+			maildropRoot = null;
+			boolean url = root.regionMatches(true, 0, FILESOURCE_URL_SCHEME, 0, FILESOURCE_URL_SCHEME.length());
+			String why = e.getMessage() == null ? e.toString() : e.getMessage();
+			Exception logged = e;
+			if (url && !safe(root).equals(root)) {
+				// a file system's message may repeat the URL, and its query holds the connection
+				// settings: never in the message or the log
+				why = why.replace(root, safe(root));
+				IOException clean = new IOException(why);
+				clean.setStackTrace(e.getStackTrace());
+				logged = clean;
+			}
+			rootError = "Can't open the maildrop root " + safe(root)
+					+ (url ? "" : " on " + (source != null && !source.trim().isEmpty() ? source.trim() : factory == null ? "?" : factory.getTypeId()))
+					+ ": " + why;
+			logError(rootError, logged);
 		}
+	}
+
+	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&jdbcUrl=...}) */
+	public static final String FILESOURCE_URL_SCHEME = "filesource:";
+
+	/**
+	 * The file system's connection settings: every setting named PREFIX + KEY in this server's
+	 * configuration ({@code parley.mail.fileSource.jdbcUrl} gives the connection key {@code jdbcUrl}). A
+	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
+	 */
+	private java.util.Properties connectionSettings(String prefix) {
+		java.util.Properties all = getConfiguration() != null ? getConfiguration() : System.getProperties();
+		java.util.Properties ret = new java.util.Properties();
+		for (String k : all.stringPropertyNames()) {
+			if (k.startsWith(prefix) && k.length() > prefix.length()) {
+				ret.setProperty(k.substring(prefix.length()), all.getProperty(k).trim());
+			}
+		}
+		return ret;
+	}
+
+	/** A root for a message: a URL without its query (where connection settings and secrets would be) */
+	private static String safe(String root) {
+		int q = root.indexOf('?');
+		return q < 0 ? root : root.substring(0, q) + "?...";
 	}
 
 	private String property(String name, String legacy) {
@@ -267,7 +329,7 @@ public abstract class AbstractMailServer extends Server {
 
 	public FileSource getMaildropRoot() throws IOException {
 		if (maildropRoot == null) {
-			throw new IOException("The maildrop root is not configured (see " + getRootProperty() + ")");
+			throw new IOException(rootError != null ? rootError : "The maildrop root is not configured (see " + getRootProperty() + ")");
 		}
 		if (!maildropRoot.exists()) {
 			maildropRoot.mkdirs();
@@ -326,7 +388,7 @@ public abstract class AbstractMailServer extends Server {
 	@Override
 	public synchronized void start() {
 		if (maildropRoot == null) {
-			IOException err = new IOException("The maildrop root is not configured (" + getRootProperty() + ")");
+			IOException err = new IOException(rootError != null ? rootError : "The maildrop root is not configured (" + getRootProperty() + ")");
 			logError("Can't start " + getName() + ": " + err.getMessage(), err);
 			throw new java.io.UncheckedIOException(err);
 		}
