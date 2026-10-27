@@ -1,10 +1,10 @@
 package us.bringardner.parley.mail.server;
 
 import java.io.IOException;
-import java.util.Locale;
 
 import us.bringardner.parley.core.ILogger.Level;
 import us.bringardner.parley.files.FileSource;
+import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
 import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.Server;
@@ -244,50 +244,19 @@ public abstract class AbstractMailServer extends Server {
 		String root = tmp.trim();
 		String source = property(fileSourceProp, legacyFileSourceProp);
 		try {
-			if (root.regionMatches(true, 0, FILESOURCE_URL_SCHEME, 0, FILESOURCE_URL_SCHEME.length())) {
-				// a filesource: URL names its file system and connection settings itself
-				maildropRoot = FileSourceFactory.getFileSource(root);
-				factory = maildropRoot.getFileSourceFactory();
-				return;
-			}
-			if (source != null && !source.trim().isEmpty()) {
-				FileSourceFactory f = FileSourceFactory.getFileSourceFactory(source.trim().toLowerCase(Locale.ROOT));
-				if (f == null) {
-					throw new IOException("There is no file system " + source.trim() + " (" + fileSourceProp + ")");
-				}
-				java.util.Properties connection = connectionSettings(fileSourceProp + ".");
-				if (!connection.isEmpty()) {
-					f.setConnectionProperties(connection);
-				}
-				factory = f;
-			}
-			// (some file systems connect when first used, others don't: connect it here)
-			if (!factory.isConnected() && !factory.connect()) {
-				throw new IOException("Can't connect");
-			}
-			maildropRoot = factory.createFileSource(root);
-		} catch (IOException | RuntimeException e) {
+			java.util.Properties connection = MaildropRoot.isUrl(root) ? null : connectionSettings(fileSourceProp + ".");
+			maildropRoot = MaildropRoot.open(root, source, connection, fileSourceProp);
+			factory = maildropRoot.getFileSourceFactory();
+		} catch (IOException e) {
 			maildropRoot = null;
-			boolean url = root.regionMatches(true, 0, FILESOURCE_URL_SCHEME, 0, FILESOURCE_URL_SCHEME.length());
-			String why = e.getMessage() == null ? e.toString() : e.getMessage();
-			Exception logged = e;
-			if (url && !safe(root).equals(root)) {
-				// a file system's message may repeat the URL, and its query holds the connection
-				// settings: never in the message or the log
-				why = why.replace(root, safe(root));
-				IOException clean = new IOException(why);
-				clean.setStackTrace(e.getStackTrace());
-				logged = clean;
-			}
-			rootError = "Can't open the maildrop root " + safe(root)
-					+ (url ? "" : " on " + (source != null && !source.trim().isEmpty() ? source.trim() : factory == null ? "?" : factory.getTypeId()))
-					+ ": " + why;
-			logError(rootError, logged);
+			rootError = "Can't open the maildrop root " + MaildropRoot.describe(root, source) + ": "
+					+ (e.getMessage() == null ? e.toString() : e.getMessage());
+			logError(rootError, e);
 		}
 	}
 
 	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&jdbcUrl=...}) */
-	public static final String FILESOURCE_URL_SCHEME = "filesource:";
+	public static final String FILESOURCE_URL_SCHEME = MaildropRoot.URL_SCHEME;
 
 	/**
 	 * The file system's connection settings: every setting named PREFIX + KEY in this server's
@@ -295,20 +264,7 @@ public abstract class AbstractMailServer extends Server {
 	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
 	 */
 	private java.util.Properties connectionSettings(String prefix) {
-		java.util.Properties all = getConfiguration() != null ? getConfiguration() : System.getProperties();
-		java.util.Properties ret = new java.util.Properties();
-		for (String k : all.stringPropertyNames()) {
-			if (k.startsWith(prefix) && k.length() > prefix.length()) {
-				ret.setProperty(k.substring(prefix.length()), all.getProperty(k).trim());
-			}
-		}
-		return ret;
-	}
-
-	/** A root for a message: a URL without its query (where connection settings and secrets would be) */
-	private static String safe(String root) {
-		int q = root.indexOf('?');
-		return q < 0 ? root : root.substring(0, q) + "?...";
+		return MaildropRoot.connectionSettings(getConfiguration() != null ? getConfiguration() : System.getProperties(), prefix);
 	}
 
 	private String property(String name, String legacy) {
