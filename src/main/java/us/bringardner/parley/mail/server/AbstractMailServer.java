@@ -1,10 +1,10 @@
 package us.bringardner.parley.mail.server;
 
 import java.io.IOException;
-import java.util.Locale;
 
 import us.bringardner.parley.core.ILogger.Level;
 import us.bringardner.parley.files.FileSource;
+import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
 import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.Server;
@@ -21,6 +21,8 @@ public abstract class AbstractMailServer extends Server {
 	public static final String MAIL_ROOT_PROP = "parley.mail.root";
 	/** The FileSource factory for {@link #MAIL_ROOT_PROP} (the default factory if not set). */
 	public static final String MAIL_FILE_SOURCE_PROP = "parley.mail.fileSource";
+	/** Why the maildrop root couldn't be opened (start() refuses with it), or null */
+	private volatile String rootError;
 	/**
 	 * The user file every mail server uses when it has no access control of its own (no
 	 * {@code <prefix>.authenticationProvider}), read again when the file changes. The servers a
@@ -234,19 +236,35 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	protected void initMaildropRoot(String fileSourceProp, String legacyFileSourceProp, String rootProp,
 			String legacyRootProp, String defaultRoot, String defaultRootWindows) {
-		String tmp = property(fileSourceProp, legacyFileSourceProp);
-		if (tmp != null) {
-			factory = FileSourceFactory.getFileSourceFactory(tmp.toLowerCase(Locale.ROOT));
-		}
-		tmp = property(rootProp, legacyRootProp);
+		rootError = null;
+		String tmp = property(rootProp, legacyRootProp);
 		if (tmp == null || tmp.trim().isEmpty()) {
 			return; // required: start() says so
 		}
+		String root = tmp.trim();
+		String source = property(fileSourceProp, legacyFileSourceProp);
 		try {
-			maildropRoot = factory.createFileSource(tmp);
+			java.util.Properties connection = MaildropRoot.isUrl(root) ? null : connectionSettings(fileSourceProp + ".");
+			maildropRoot = MaildropRoot.open(root, source, connection, fileSourceProp);
+			factory = maildropRoot.getFileSourceFactory();
 		} catch (IOException e) {
-			logInfo("Error attempting to set the maildrop root " + tmp + " using the " + factory.getTypeId() + " factory");
+			maildropRoot = null;
+			rootError = "Can't open the maildrop root " + MaildropRoot.describe(root, source) + ": "
+					+ (e.getMessage() == null ? e.toString() : e.getMessage());
+			logError(rootError, e);
 		}
+	}
+
+	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&jdbcUrl=...}) */
+	public static final String FILESOURCE_URL_SCHEME = MaildropRoot.URL_SCHEME;
+
+	/**
+	 * The file system's connection settings: every setting named PREFIX + KEY in this server's
+	 * configuration ({@code parley.mail.fileSource.jdbcUrl} gives the connection key {@code jdbcUrl}). A
+	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
+	 */
+	private java.util.Properties connectionSettings(String prefix) {
+		return MaildropRoot.connectionSettings(getConfiguration() != null ? getConfiguration() : System.getProperties(), prefix);
 	}
 
 	private String property(String name, String legacy) {
@@ -267,7 +285,7 @@ public abstract class AbstractMailServer extends Server {
 
 	public FileSource getMaildropRoot() throws IOException {
 		if (maildropRoot == null) {
-			throw new IOException("The maildrop root is not configured (see " + getRootProperty() + ")");
+			throw new IOException(rootError != null ? rootError : "The maildrop root is not configured (see " + getRootProperty() + ")");
 		}
 		if (!maildropRoot.exists()) {
 			maildropRoot.mkdirs();
@@ -326,7 +344,7 @@ public abstract class AbstractMailServer extends Server {
 	@Override
 	public synchronized void start() {
 		if (maildropRoot == null) {
-			IOException err = new IOException("The maildrop root is not configured (" + getRootProperty() + ")");
+			IOException err = new IOException(rootError != null ? rootError : "The maildrop root is not configured (" + getRootProperty() + ")");
 			logError("Can't start " + getName() + ": " + err.getMessage(), err);
 			throw new java.io.UncheckedIOException(err);
 		}
