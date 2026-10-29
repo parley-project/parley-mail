@@ -167,8 +167,15 @@ public final class MailStore {
 	/**
 	 * Make the INBOX directory and, the first time, the default mailboxes (Sent,
 	 * Drafts, Trash, Junk, Archive), all subscribed.
+	 * <p>
+	 * Every delivery calls this, and once the store is made it has nothing to do: it looks first
+	 * and takes the tree lock (exclusive, and with other servers a round trip to all of them) only
+	 * when something is missing.
 	 */
 	public void init(boolean createDefaults) throws IOException {
+		if (isMade(createDefaults)) {
+			return;
+		}
 		if (!inbox.mkdirs() && !inbox.isDirectory()) {
 			throw new IOException("Can't create " + inbox.getAbsolutePath());
 		}
@@ -176,6 +183,17 @@ public final class MailStore {
 			initLocked(createDefaults);
 			return null;
 		});
+	}
+
+	/**
+	 * True if {@link #initLocked} would find nothing to do. It writes the subscriptions last, whole
+	 * (a rename), so with defaults they are the mark that the first init is complete: a server that
+	 * finds the mailboxes directory but not them waits for the one making it, under the lock.
+	 */
+	private boolean isMade(boolean createDefaults) throws IOException {
+		return inbox.isDirectory()
+				&& inbox.getChild(MAILBOXES).isDirectory()
+				&& (!createDefaults || inbox.getChild(SUBSCRIPTIONS).exists());
 	}
 
 	private void initLocked(boolean createDefaults) throws IOException {
