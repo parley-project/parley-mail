@@ -108,6 +108,33 @@ public final class MailStore {
 		this.owner = owner;
 	}
 
+	private volatile ShareIndex shares;
+
+	/**
+	 * Keep the maildrop root's share index up to date when this store's ACLs change, so other
+	 * users' LIST finds them.
+	 * @since 2.0.0
+	 */
+	public void setShareIndex(ShareIndex shares) {
+		this.shares = shares;
+	}
+
+	/** Recompute the owner's lines of the share index (under the tree lock). */
+	private void sharesChangedLocked() throws IOException {
+		ShareIndex s = shares;
+		if (s == null || owner == null) {
+			return;
+		}
+		java.util.Set<String> ids = new java.util.TreeSet<>();
+		for (Entry e : listAll()) {
+			MailboxAcl acl = MailboxAcl.read(e.dir);
+			if (acl != null) {
+				ids.addAll(acl.entries().keySet());
+			}
+		}
+		s.update(owner, ids);
+	}
+
 	/** @return the user whose mailboxes these are, or null @since 2.0.0 */
 	public String getOwner() {
 		return owner;
@@ -479,6 +506,7 @@ public final class MailStore {
 					acl = acl.with(who, MailboxAcl.ALL);
 				}
 				acl.write(directory(n));
+				sharesChangedLocked();
 			}
 			return null;
 		});
@@ -572,6 +600,7 @@ public final class MailStore {
 			}
 			String rights = MailboxAcl.modify(acl.get(identifier), change);
 			acl.with(identifier, rights).write(dir);
+			sharesChangedLocked();
 			return rights;
 		});
 	}
@@ -598,6 +627,7 @@ public final class MailStore {
 				return false;
 			}
 			acl.without(identifier).write(dir);
+			sharesChangedLocked();
 			return true;
 		});
 	}
@@ -650,10 +680,14 @@ public final class MailStore {
 		if (children && dir.getChild(NOSELECT_MARKER).exists()) {
 			throw new StoreException(MailboxConstants.CODE_HASCHILDREN, "The mailbox has child mailboxes");
 		}
+		boolean hadAcl = MailboxAcl.read(dir) != null;
 		try (NamedLock busy = lockMailbox(dir)) {
 			deleteMailboxLocked(dir, children);
 		}
 		removeSubscriptionLocked(name, false);
+		if (hadAcl) {
+			sharesChangedLocked();
+		}
 	}
 
 	private void deleteMailboxLocked(FileSource dir, boolean children) throws IOException {

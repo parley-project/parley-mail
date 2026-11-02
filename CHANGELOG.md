@@ -9,6 +9,8 @@
   `rightsOf`. `new MailStore(inbox, registry, owner)` names the owner, whose mailboxes without a file give the owner
   every right. `MailStore.create(name, specialUse, creator)` copies the parent's ACL and gives the creator every right;
   RENAME moves an ACL with its mailbox (renaming INBOX copies INBOX's), DELETE removes it.
+- **`ShareIndex`**: the maildrop root's `.imap-shares` (owner TAB identifier), which owners have shared mailboxes with
+  which users, groups or anyone, kept up to date by `MailStore` (`setShareIndex`) for IMAP's Other Users namespace.
 
 ### Changed (2026-11-02: parley-net's IPrincipal split, To-Do 3.2)
 
