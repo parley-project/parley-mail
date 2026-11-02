@@ -2,6 +2,15 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-02: To-Do 3.6)
+
+- **`Mailbox.copyTo(target, list, keepFlag)` and `moveTo(target, list, source, keepFlag)`**: the copies are made with
+  only the flags the filter allows (IMAP's COPY and MOVE, by the rights on the target).
+- **The mail store's management bean is named by the server's id in the launcher**
+  (`us.bringardner.parley:type=MailStore,name=imaps`, as its `Server` bean), from parley-net's
+  `ServerContext.getServerIdBeingMade()`; by the server's name when it was made without a launcher. It was named by the
+  server's class (`name=ImapServer`, `instance=2` for imaps).
+
 ### Added (2026-11-02: mailbox ACLs, To-Do 3.4)
 
 - **Per-mailbox access control lists (RFC 4314)** in a `.imap-acl` file in each mailbox's folder: `MailboxAcl` (the

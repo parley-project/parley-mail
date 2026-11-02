@@ -47,6 +47,8 @@ public abstract class AbstractMailServer extends Server {
 	private FileSource maildropRoot;
 	/** The launcher context this server was made in, or null (made by code) */
 	private final ServerContext context = MAKING_IN.get();
+	/** The id the launcher knows this server by (e.g. imaps), or null when made by code */
+	private final String serverId = context == null ? null : context.getServerIdBeingMade();
 	/** what {@link #useSharedSettings()} set */
 	private boolean sharedSettingsUsed;
 	private boolean sharedAcl;
@@ -430,7 +432,8 @@ public abstract class AbstractMailServer extends Server {
 
 	/**
 	 * In a launcher, the store's mailbox ACLs are managed through this server while it runs
-	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}, named by the server's name).
+	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}, named by the server's id in
+	 * the launcher, e.g. imaps; by its name when it was made without one).
 	 */
 	private synchronized void registerStoreAdmin() {
 		ServerContext c = context;
@@ -439,7 +442,7 @@ public abstract class AbstractMailServer extends Server {
 		}
 		try {
 			String d = rootDescription != null ? rootDescription : maildropRoot.getName();
-			storeAdminBean = c.register(us.bringardner.parley.mail.store.MailStoreAdminMXBean.TYPE, getName(),
+			storeAdminBean = c.register(us.bringardner.parley.mail.store.MailStoreAdminMXBean.TYPE, serverId != null ? serverId : getName(),
 					new us.bringardner.parley.mail.store.MailStoreAdmin(maildropRoot, d, us.bringardner.parley.mail.store.MailboxRegistry.get()));
 		} catch (javax.management.JMException | RuntimeException e) {
 			logError("Can't register the mail store's JMX bean for " + getName() + ": " + e.getMessage(), e);

@@ -189,6 +189,37 @@ public class TestSharedStore {
 		assertTrue(Mailbox.hasFlag(otherDst.getMessages().get(0).getFlags(otherDst), "\\Flagged"));
 	}
 
+	/** To-Do 3.6: copies made with only the flags a filter allows (IMAP's rights on the target) */
+	@Test
+	public void copyAndMoveKeepOnlyTheFlagsAllowed() throws Exception {
+		FileSource archive = inbox.getChild(MailStore.MAILBOXES).getChild("Archive");
+		Mailbox src = SharedStoreSupport.open(a, inbox);
+		Mailbox dst = SharedStoreSupport.open(a, archive);
+		MessageInfo one = SharedStoreSupport.append(src, "one");
+		MessageInfo two = SharedStoreSupport.append(src, "two");
+		src.storeFlags(one, Mailbox.FlagOp.ADD, Set.of("\\Seen", "\\Flagged"), null);
+		src.storeFlags(two, Mailbox.FlagOp.ADD, Set.of("\\Seen", "\\Flagged"), null);
+		java.util.function.Predicate<String> seenOnly = f -> f.equalsIgnoreCase("\\Seen");
+
+		MessageInfo copy = src.copyTo(dst, List.of(one), seenOnly).get(0);
+		assertEquals(Set.of("\\Seen"), copy.getFlags(dst));
+		assertEquals(Set.of("\\Seen", "\\Flagged"), one.getFlags(src), "the original keeps its flags");
+		MessageInfo moved = src.moveTo(dst, List.of(two), null, seenOnly).get(0);
+		assertEquals(Set.of("\\Seen"), moved.getFlags(dst));
+		assertEquals(Set.of("\\Seen", "\\Flagged"), src.copyTo(dst, List.of(one), null).get(0).getFlags(dst),
+				"no filter: every flag");
+
+		Mailbox otherDst = SharedStoreSupport.open(b, archive);
+		int flagged = 0;
+		for (MessageInfo m : otherDst.getMessages()) {
+			if (Mailbox.hasFlag(m.getFlags(otherDst), "\\Flagged")) {
+				flagged++;
+			}
+		}
+		assertEquals(3, otherDst.count());
+		assertEquals(1, flagged, "only the unfiltered copy was saved with \\Flagged");
+	}
+
 	@Test
 	public void movesBothWaysAtOnceDontWaitForEachOther() throws Exception {
 		FileSource other = inbox.getChild(MailStore.MAILBOXES).getChild("Other");

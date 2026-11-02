@@ -974,18 +974,31 @@ public final class Mailbox {
 	 * @return the new messages, in the order given
 	 */
 	public List<MessageInfo> moveTo(Mailbox target, List<MessageInfo> list, MailboxView source) throws IOException {
+		return moveTo(target, list, source, null);
+	}
+
+	/**
+	 * Move messages as {@link #moveTo(Mailbox, List, MailboxView)}, keeping only the flags the
+	 * filter allows: the copies are made with them, so a flag the target's rights don't allow
+	 * never reaches it (RFC 4314 section 4, IMAP COPY and MOVE).
+	 *
+	 * @param keepFlag true for a flag the new message may have; null keeps them all
+	 * @return the new messages, in the order given
+	 */
+	public List<MessageInfo> moveTo(Mailbox target, List<MessageInfo> list, MailboxView source,
+			java.util.function.Predicate<String> keepFlag) throws IOException {
 		if (target == this) {
 			throw new IOException("A message can't be moved into its own mailbox");
 		}
 		if (domain != null && domain == target.domain) {
 			try (LockGroup g = domain.lockAll(Arrays.asList(lockName, target.lockName), Mode.EXCLUSIVE, domain.options().timeout())) {
-				return moveLocked(target, list, source, g);
+				return moveLocked(target, list, source, g, keepFlag);
 			}
 		}
 		if (domain == null && target.domain == null) {
-			return moveLocked(target, list, source, null);
+			return moveLocked(target, list, source, null, keepFlag);
 		}
-		List<MessageInfo> copies = copyTo(target, list);
+		List<MessageInfo> copies = copyTo(target, list, keepFlag);
 		List<Long> uids = new ArrayList<>();
 		for (MessageInfo m : list) {
 			uids.add(m.getUid());
@@ -995,7 +1008,8 @@ public final class Mailbox {
 	}
 
 	/** Both mailboxes' domain locks are held (or there is no domain). */
-	private List<MessageInfo> moveLocked(Mailbox target, List<MessageInfo> list, MailboxView source, LockGroup g) throws IOException {
+	private List<MessageInfo> moveLocked(Mailbox target, List<MessageInfo> list, MailboxView source, LockGroup g,
+			java.util.function.Predicate<String> keepFlag) throws IOException {
 		NamedLock mine = g == null ? null : lockOf(g, lockName);
 		NamedLock theirs = g == null ? null : lockOf(g, target.lockName);
 		// this object's locks in one order too (by key), and only ever while both domain locks are held
@@ -1021,7 +1035,7 @@ public final class Mailbox {
 					if (messages.get(m.getUid()) != m) {
 						continue; // expunged meanwhile
 					}
-					Set<String> flags = new LinkedHashSet<>(m.flags);
+					Set<String> flags = keep(m.flags, keepFlag);
 					FileSource dest = target.dir.getChild(newName());
 					ensureHeld(mine);
 					ensureHeld(theirs);
@@ -1107,10 +1121,32 @@ public final class Mailbox {
 
 	/** Copy messages into another mailbox, keeping flags and INTERNALDATE. */
 	public List<MessageInfo> copyTo(Mailbox target, List<MessageInfo> list) throws IOException {
+		return copyTo(target, list, null);
+	}
+
+	/**
+	 * Copy messages as {@link #copyTo(Mailbox, List)}, keeping only the flags the filter allows:
+	 * the copies are made with them, so a flag the target's rights don't allow never reaches it
+	 * (RFC 4314 section 4, IMAP COPY and MOVE).
+	 *
+	 * @param keepFlag true for a flag the copy may have; null keeps them all
+	 */
+	public List<MessageInfo> copyTo(Mailbox target, List<MessageInfo> list, java.util.function.Predicate<String> keepFlag)
+			throws IOException {
 		List<MessageInfo> ret = new ArrayList<>();
 		for (MessageInfo m : list) {
 			try (InputStream in = m.getFile().getInputStream()) {
-				ret.add(target.append(in, m.getFlags(this), m.getInternalDate()));
+				ret.add(target.append(in, keep(m.getFlags(this), keepFlag), m.getInternalDate()));
+			}
+		}
+		return ret;
+	}
+
+	private static Set<String> keep(Collection<String> flags, java.util.function.Predicate<String> keepFlag) {
+		Set<String> ret = new LinkedHashSet<>();
+		for (String f : flags) {
+			if (keepFlag == null || keepFlag.test(f)) {
+				ret.add(f);
 			}
 		}
 		return ret;
