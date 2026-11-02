@@ -2,6 +2,13 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-02: durations, To-Do 2.19)
+
+- **`<prefix>.autologout` is a duration** (`10m`, `30m`, `90s`; a bare number is still milliseconds), read with
+  parley-core's `getDuration`. A value of 0 or less gives the server's default.
+- The shared user list's reload setting is parley-net's `parley.net.acl.reloadInterval` (a duration; was
+  `reloadSeconds`), so servers whose reload interval differs get lists of their own, as before.
+
 ### Changed (2026-11-01: parley.servers says which servers run, To-Do 2.12)
 
 - **A port is only a port**: `MailServerProvider` (new constructor with the server's prefix, standard port and whether

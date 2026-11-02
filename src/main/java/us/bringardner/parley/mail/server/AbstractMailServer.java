@@ -125,7 +125,7 @@ public abstract class AbstractMailServer extends Server {
 		}
 		// the list's own setting (how often it reads the file) is part of what is shared: servers
 		// whose settings differ get lists of their own, so none gets another server's
-		String reload = getProperty(us.bringardner.parley.net.server.FileBasedAcl.PROP_RELOAD_SECONDS);
+		String reload = getProperty(us.bringardner.parley.net.server.FileBasedAcl.PROP_RELOAD_INTERVAL);
 		String sharedKey = SHARED_USERS_KEY + key.getPath() + (reload == null ? "" : "|" + reload.trim());
 		try {
 			return context.shared(sharedKey, us.bringardner.parley.net.server.FileBasedAcl.class, () -> users(key));
@@ -311,9 +311,15 @@ public abstract class AbstractMailServer extends Server {
 
 	// ------------------------------------------------------------------ autologout
 
-	/** Start with this idle time (ms), from this server's settings. Doesn't call {@link #onAutologoutChanged(int)}. */
+	/**
+	 * Start with this idle time, from this server's settings: a duration ({@code 10m}, {@code 30m}; a bare
+	 * number is ms). Doesn't call {@link #onAutologoutChanged(int)}.
+	 *
+	 * @param defaultValue the default, in ms
+	 */
 	protected void initAutologout(String property, int defaultValue) {
-		autologout = getIntProperty(property, defaultValue);
+		long v = getDuration(property, defaultValue);
+		autologout = v <= 0 ? defaultValue : us.bringardner.parley.core.util.Durations.toIntMillis(v);
 	}
 
 	public int getAutologout() {
