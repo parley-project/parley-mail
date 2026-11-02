@@ -27,11 +27,13 @@ import us.bringardner.parley.io.IoUtils;
  * {@link us.bringardner.parley.net.server.IPrincipal#getGroups()};</li>
  * <li>{@value #ANYONE} is every logged in user.</li>
  * </ul>
- * A mailbox with no file has only its owner's default rights ({@value #ALL}). The rights a
- * user has are the union of the entries that name the user, one of the user's groups or
- * {@value #ANYONE}, less the union of the negative ones. The owner always keeps
- * {@value #OWNER_ALWAYS} (seeing the mailbox and changing its ACL), so an owner can't be
- * locked out.
+ * A mailbox with no file has only its owner's default rights ({@value #ALL}). The owner is
+ * whoever the store belongs to, and is not written in the file unless an owner's own rights
+ * are set: without an entry of its own, the owner has every right. So users who share one
+ * maildrop each keep their own rights on it. The rights a user has are the union of the
+ * entries that name the user, one of the user's groups or {@value #ANYONE}, less the union
+ * of the negative ones. The owner always keeps {@value #OWNER_ALWAYS} (seeing the mailbox
+ * and changing its ACL), so an owner can't be locked out.
  * <p>
  * Objects are immutable: the changes return a new list. {@link MailStore} reads and writes
  * the file (under the user's tree lock), so IMAP and POP3 share it.
@@ -118,6 +120,32 @@ public final class MailboxAcl {
 		} else {
 			m.put(identifier, r);
 		}
+		return new MailboxAcl(m);
+	}
+
+	/**
+	 * @param rights canonical or not; an empty string is kept as an entry with no rights (an
+	 * owner's: the owner then has only {@value #OWNER_ALWAYS})
+	 * @return a list with the identifier's entry replaced
+	 */
+	public MailboxAcl withEntry(String identifier, String rights) {
+		checkIdentifier(identifier);
+		Map<String, String> m = new LinkedHashMap<>(entries);
+		m.put(identifier, canonical(rights));
+		return new MailboxAcl(m);
+	}
+
+	/**
+	 * The list as it applies to a mailbox of this owner: with the owner's implicit every right
+	 * first when the list has no entry for the owner.
+	 */
+	public MailboxAcl effective(String owner) {
+		if (owner == null || entries.containsKey(owner)) {
+			return this;
+		}
+		Map<String, String> m = new LinkedHashMap<>();
+		m.put(owner, ALL);
+		m.putAll(entries);
 		return new MailboxAcl(m);
 	}
 
@@ -277,7 +305,7 @@ public final class MailboxAcl {
 		if (acl == null) {
 			return isOwner ? ALL : "";
 		}
-		String plus = "";
+		String plus = isOwner && !acl.entries.containsKey(owner) ? ALL : "";
 		String less = "";
 		for (Map.Entry<String, String> e : acl.entries.entrySet()) {
 			String id = e.getKey();
@@ -325,7 +353,7 @@ public final class MailboxAcl {
 			}
 		}
 		String who = identifier.charAt(0) == NEGATIVE ? identifier.substring(1) : identifier;
-		if (who.isEmpty() || who.equals(String.valueOf(GROUP)) || who.charAt(0) == NEGATIVE) {
+		if (who.isEmpty() || who.equals(String.valueOf(GROUP)) || who.charAt(0) == NEGATIVE || identifier.charAt(0) == '#') {
 			throw new IllegalArgumentException("Not an identifier: " + identifier);
 		}
 	}
@@ -360,10 +388,7 @@ public final class MailboxAcl {
 				String id = line.substring(0, tab);
 				try {
 					checkIdentifier(id);
-					String rights = canonical(line.substring(tab + 1).trim());
-					if (!rights.isEmpty()) {
-						m.put(id, rights);
-					}
+					m.put(id, canonical(line.substring(tab + 1).trim()));
 				} catch (IllegalArgumentException e) {
 					// a line this version can't read is left out
 				}

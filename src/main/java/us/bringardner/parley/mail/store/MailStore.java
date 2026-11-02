@@ -132,7 +132,13 @@ public final class MailStore {
 				ids.addAll(acl.entries().keySet());
 			}
 		}
-		s.update(owner, ids);
+		try {
+			s.update(owner, ids);
+		} catch (IOException e) {
+			// the ACL is changed already; the index is a hint for LIST, made right at the next change
+			System.getLogger(MailStore.class.getName()).log(System.Logger.Level.WARNING,
+					"Can't update the share index for " + owner + ": " + e.getMessage());
+		}
 	}
 
 	/** @return the user whose mailboxes these are, or null @since 2.0.0 */
@@ -501,7 +507,7 @@ public final class MailStore {
 			MailboxAcl parent = parentAclLocked(n);
 			createLocked(n, specialUse);
 			if (parent != null || (who != null && !who.equals(owner))) {
-				MailboxAcl acl = parent != null ? parent : MailboxAcl.ownerDefault(owner);
+				MailboxAcl acl = parent != null ? parent : MailboxAcl.empty();
 				if (who != null) {
 					acl = acl.with(who, MailboxAcl.ALL);
 				}
@@ -555,7 +561,7 @@ public final class MailStore {
 	 */
 	public MailboxAcl getEffectiveAcl(String name) throws IOException {
 		MailboxAcl acl = getAcl(name);
-		return acl != null ? acl : MailboxAcl.ownerDefault(owner);
+		return (acl != null ? acl : MailboxAcl.empty()).effective(owner);
 	}
 
 	/**
@@ -580,7 +586,8 @@ public final class MailStore {
 
 	/**
 	 * SETACL: change one identifier's rights ({@link MailboxAcl#modify}: +rights, -rights or
-	 * rights). A mailbox without a file gets one, starting from the owner's default.
+	 * rights). A mailbox without a file gets one. The owner isn't written in it unless the
+	 * owner's own rights are set (then an empty entry is kept: the owner has only l and a).
 	 *
 	 * @return the identifier's rights now
 	 * @throws IllegalArgumentException for a bad identifier or right
@@ -596,10 +603,13 @@ public final class MailStore {
 			}
 			MailboxAcl acl = MailboxAcl.read(dir);
 			if (acl == null) {
-				acl = MailboxAcl.ownerDefault(owner);
+				acl = MailboxAcl.empty();
 			}
-			String rights = MailboxAcl.modify(acl.get(identifier), change);
-			acl.with(identifier, rights).write(dir);
+			boolean isOwner = identifier.equals(owner);
+			// the owner's rights start from every right (implicit) and an owner's empty entry is kept
+			String current = acl.get(identifier) == null && isOwner ? MailboxAcl.ALL : acl.get(identifier);
+			String rights = MailboxAcl.modify(current, change);
+			(isOwner ? acl.withEntry(identifier, rights) : acl.with(identifier, rights)).write(dir);
 			sharesChangedLocked();
 			return rights;
 		});
@@ -620,10 +630,7 @@ public final class MailStore {
 				throw new StoreException(MailboxConstants.CODE_NONEXISTENT, "No such mailbox");
 			}
 			MailboxAcl acl = MailboxAcl.read(dir);
-			if (acl == null) {
-				acl = MailboxAcl.ownerDefault(owner);
-			}
-			if (acl.get(identifier) == null) {
+			if (acl == null || acl.get(identifier) == null) {
 				return false;
 			}
 			acl.without(identifier).write(dir);

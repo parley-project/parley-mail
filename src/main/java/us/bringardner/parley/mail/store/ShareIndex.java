@@ -113,7 +113,11 @@ public final class ShareIndex {
 		Map<String, Set<String>> ret = new TreeMap<>();
 		FileSource f = root.getChild(FILE);
 		if (!f.exists()) {
-			return ret;
+			// a replace under way on a file system without a one-step replace
+			f = root.getChild(FILE + ".old");
+			if (!f.exists()) {
+				return ret;
+			}
 		}
 		try (BufferedReader r = new BufferedReader(new InputStreamReader(f.getInputStream(), StandardCharsets.UTF_8))) {
 			String line;
@@ -186,12 +190,20 @@ public final class ShareIndex {
 					throw new IOException("Can't replace " + f.getAbsolutePath());
 				}
 			} else {
-				// no one-step replace: a reader may find no file for a moment (it is only a hint)
-				if (f.exists()) {
-					f.delete();
+				// no one-step replace: the previous file stands in (.old) while the new one goes in
+				FileSource old = root.getChild(FILE + ".old");
+				if (old.exists()) {
+					old.delete();
+				}
+				if (f.exists() && !f.renameTo(old)) {
+					throw new IOException("Can't replace " + f.getAbsolutePath());
 				}
 				if (!tmp.renameTo(f)) {
+					old.renameTo(f);
 					throw new IOException("Can't write " + f.getAbsolutePath());
+				}
+				if (old.exists()) {
+					old.delete();
 				}
 			}
 		} finally {

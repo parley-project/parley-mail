@@ -78,7 +78,8 @@ public class TestMailboxAcl {
 		assertEquals("lrs", MailboxAcl.rightsOf(acl, TONY, BOB, sales), "w taken away from bob, whatever gives it");
 		assertEquals("lrsw", MailboxAcl.rightsOf(acl, TONY, "carol@bringardner.us", sales));
 		assertEquals("l", MailboxAcl.rightsOf(acl, TONY, "dave@other.com", NONE), "anyone is every user, any domain");
-		assertEquals("la", MailboxAcl.rightsOf(acl, TONY, TONY, NONE), "the owner always keeps l and a");
+		assertEquals("lrswipkxtea", MailboxAcl.rightsOf(acl, TONY, TONY, NONE), "no entry of the owner's own: every right");
+		assertEquals("la", MailboxAcl.rightsOf(acl.withEntry(TONY, ""), TONY, TONY, NONE), "the owner always keeps l and a");
 		assertEquals("lrswipkxtea", MailboxAcl.rightsOf(null, TONY, TONY, NONE), "no file: the owner's default");
 		assertEquals("", MailboxAcl.rightsOf(null, TONY, BOB, NONE), "no file: no one else");
 		assertEquals("", MailboxAcl.rightsOf(acl, TONY, null, NONE), "anyone is a logged in user");
@@ -101,8 +102,9 @@ public class TestMailboxAcl {
 		assertEquals("i", store.setRights("INBOX", "-" + BOB, "i"));
 		FileSource file = store.getInboxDirectory().getChild(MailboxAcl.FILE);
 		assertTrue(file.exists());
-		assertEquals(Arrays.asList(TONY + "\tlrswipkxtea", BOB + "\tlrw", "anyone\tl", "-" + BOB + "\ti"), lines(file),
-				"one line per identifier, the owner's default written first");
+		assertEquals(Arrays.asList(BOB + "\tlrw", "anyone\tl", "-" + BOB + "\ti"), lines(file),
+				"one line per identifier; the owner isn't written");
+		assertEquals("lrswipkxtea", store.getEffectiveAcl("INBOX").get(TONY), "GETACL shows the owner");
 
 		MailboxAcl acl = store.getAcl("INBOX");
 		assertEquals("lrw", acl.get(BOB));
@@ -115,7 +117,13 @@ public class TestMailboxAcl {
 
 		// the owner can't lock themselves out
 		store.setRights("INBOX", TONY, "");
+		assertEquals("", store.getAcl("INBOX").get(TONY), "an owner's empty entry is kept");
 		assertEquals("la", store.rightsOf("INBOX", TONY, NONE));
+		store.setRights("INBOX", TONY, "+r");
+		assertEquals("lar".length(), store.rightsOf("INBOX", TONY, NONE).length());
+		assertTrue(store.deleteRights("INBOX", TONY));
+		assertEquals("lrswipkxtea", store.rightsOf("INBOX", TONY, NONE), "no entry: every right again");
+		assertThrows(IllegalArgumentException.class, () -> store.setRights("INBOX", "#x", "l"), "# starts a comment");
 
 		assertThrows(MailStore.StoreException.class, () -> store.setRights("Nope", BOB, "l"));
 		assertThrows(IllegalArgumentException.class, () -> store.setRights("INBOX", BOB, "Z"));
@@ -130,12 +138,13 @@ public class TestMailboxAcl {
 		store.create("Projects/Q1", null, BOB);
 		MailboxAcl q1 = store.getAcl("Projects/Q1");
 		assertNotNull(q1);
-		assertEquals("lrswipkxtea", q1.get(TONY));
+		assertEquals(null, q1.get(TONY), "the owner is implicit");
+		assertEquals("lrswipkxtea", store.rightsOf("Projects/Q1", TONY, NONE));
 		assertEquals("lrswipkxtea", q1.get(BOB), "the creator gets every right");
 
 		store.create("Top", null, BOB);
 		assertEquals("lrswipkxtea", store.getAcl("Top").get(BOB), "another user's CREATE writes a file");
-		assertEquals("lrswipkxtea", store.getAcl("Top").get(TONY));
+		assertEquals("lrswipkxtea", store.rightsOf("Top", TONY, NONE));
 
 		store.create("Projects/Q2", null);
 		assertEquals("lrk", store.getAcl("Projects/Q2").get(BOB), "copied from the parent");
@@ -162,6 +171,17 @@ public class TestMailboxAcl {
 		store.delete("C/B");
 		store.create("C/B", null);
 		assertNull(store.getAcl("C/B"), "a mailbox made again has no ACL left");
+	}
+
+	/** Users who share one maildrop each own it: one's SETACL doesn't take the other's rights away. */
+	@Test
+	public void aSharedMaildropKeepsEveryOwnersRights() throws Exception {
+		MailStore s1 = new MailStore(store.getInboxDirectory(), MailboxRegistry.get(), "s1@x.us");
+		MailStore s2 = new MailStore(store.getInboxDirectory(), MailboxRegistry.get(), "s2@x.us");
+		s1.setRights("INBOX", BOB, "lr");
+		assertEquals("lrswipkxtea", s2.rightsOf("INBOX", "s2@x.us", NONE));
+		assertEquals("lrswipkxtea", s1.rightsOf("INBOX", "s1@x.us", NONE));
+		assertEquals("lr", s2.rightsOf("INBOX", BOB, NONE));
 	}
 
 	private static List<String> lines(FileSource f) throws Exception {
