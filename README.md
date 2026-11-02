@@ -39,13 +39,24 @@ launcher and every module on the class path:
 java -cp ... us.bringardner.parley.net.server.ServerMain parley.servers smtp,submission,imap,pop3
 ```
 
-| Id | Server | Port setting (default; 0 turns it off) |
+| Id | Server | Port setting (default) |
 |---|---|---|
 | `smtp` | SMTP relay (MX) | `parley.mail.smtp.port` (25) |
 | `submission` | SMTP submission | `parley.mail.submission.port` (587) |
-| `submissions` | submission with implicit TLS | `parley.mail.submissions.port` (off unless set; 465) |
-| `imap` / `imaps` | IMAP / with implicit TLS | `parley.mail.imap.port` (143) / `parley.mail.imaps.port` (off unless set; 993) |
-| `pop3` / `pop3s` | POP3 / with implicit TLS | `parley.mail.pop3.port` (110) / `parley.mail.pop3s.port` (off unless set; 995) |
+| `submissions` | submission with implicit TLS | `parley.mail.submissions.port` (465) |
+| `imap` / `imaps` | IMAP / with implicit TLS | `parley.mail.imap.port` (143) / `parley.mail.imaps.port` (993) |
+| `pop3` / `pop3s` | POP3 / with implicit TLS | `parley.mail.pop3.port` (110) / `parley.mail.pop3s.port` (995) |
+
+`parley.servers` alone says which servers run, and a port is only a port: every server listed runs
+on its port (its protocol's standard port unless set). A server with implicit TLS (`submissions`,
+`imaps`, `pop3s`, parley-ftp's `ftps`) needs a TLS key store (`parley.mail.tls.keyStore`, or
+`<prefix>.keyStoreName` for that server alone); while it has none it is skipped with a warning and
+the others start. Port 0 no longer turns a server off: a server set to port 0 is skipped with a
+warning that says to leave it out of `parley.servers`. 1.x's `parley.mail.pop3.secure`,
+`parley.mail.imap.secure` and `parley.mail.smtp.secure` are no longer read (a warning says so), and
+there is no relay with implicit TLS (`parley.mail.smtps`): RFC 8314's implicit TLS is submission's.
+When the list comes from the launcher's settings file, a reload of the settings reads it again: a
+server added to it can be started, and one taken out of it is off once it is stopped.
 
 Each mail server is written as if it were the only server: it is made from a configuration of its
 own and reads nothing else (not the system properties, not another server's settings), so nothing

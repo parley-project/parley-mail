@@ -2,6 +2,17 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-01: parley.servers says which servers run, To-Do 2.12)
+
+- **A port is only a port**: `MailServerProvider` (new constructor with the server's prefix, standard port and whether
+  it has implicit TLS) gives every server its standard port when `<prefix>.port` isn't set, so `submissions`, `imaps`,
+  `pop3s` and parley-ftp's `ftps` are on 465, 993, 995 and 990 (they were off, port 0, unless set). Which servers run is
+  what `parley.servers` lists. Port 0 no longer turns a server off: it is skipped with a warning to leave it out of
+  `parley.servers`.
+- **A server with implicit TLS and no key store is skipped with a warning** (`unavailable`: neither
+  `parley.mail.tls.keyStore` nor `<prefix>.keyStoreName`), so the packaged list can name the TLS servers before a key
+  store is set. `MailServerProvider.hasKeyStore`, `obsoleteSettings()` (warnings for settings 2.0.0 doesn't read).
+
 ### Changed (2026-10-26: each server alone, shared assets carry their own settings)
 
 - **Each mail server reads only its own configuration** (`AbstractMailServer.makeIn(context, configuration, make)`),
