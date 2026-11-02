@@ -56,7 +56,7 @@ public class TestStoreSetup {
 
 	private Path[] templates() throws IOException {
 		return new Path[] { file("store.tmpl", "# the store\nsharing=cluster\n"),
-				file("queue.tmpl", "# the queue\nhostname=\ndomains=\n#relayHost=x\n") };
+				file("queue.tmpl", "# the queue\nhostname=\ndomains=\n#smartHost=x\n") };
 	}
 
 	@Test
@@ -72,7 +72,7 @@ public class TestStoreSetup {
 		assertEquals("@file:/etc/parley/db.secret", f.settings.getProperty("password"));
 		FileSource root = f.createFileSource("/mail");
 		assertEquals("# the store\nsharing=cluster\n", read(root.getChild(MailLocks.STORE_SETTINGS_FILE)));
-		assertEquals("# the queue\nhostname=mx1.example.test\ndomains=\n#relayHost=x\n",
+		assertEquals("# the queue\nhostname=mx1.example.test\ndomains=\n#smartHost=x\n",
 				read(root.getChild(".smtp-queue").getChild("queue.properties")));
 		assertTrue(out.contains("made /mail on recording .parley-store.properties"), out);
 		assertTrue(out.contains("set hostname=mx1.example.test in /mail on recording .smtp-queue/queue.properties"), out);

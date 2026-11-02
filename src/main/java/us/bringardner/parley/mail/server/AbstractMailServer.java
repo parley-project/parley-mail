@@ -255,12 +255,12 @@ public abstract class AbstractMailServer extends Server {
 		}
 	}
 
-	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&jdbcUrl=...}) */
+	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&url=...}) */
 	public static final String FILESOURCE_URL_SCHEME = MaildropRoot.URL_SCHEME;
 
 	/**
 	 * The file system's connection settings: every setting named PREFIX + KEY in this server's
-	 * configuration ({@code parley.mail.fileSource.jdbcUrl} gives the connection key {@code jdbcUrl}). A
+	 * configuration ({@code parley.mail.fileSource.url} gives the connection key {@code url}). A
 	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
 	 */
 	private java.util.Properties connectionSettings(String prefix) {

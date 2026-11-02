@@ -14,8 +14,8 @@ import us.bringardner.parley.files.FileSourceFactory;
  * <ol>
  * <li>{@code parley.mail.root} is a path on the file system {@code parley.mail.fileSource} names
  * (the local disk when it isn't set), and each {@code parley.mail.fileSource.KEY} setting is that
- * file system's connection setting KEY ({@code parley.mail.fileSource.jdbcUrl}, {@code .jdbcUser},
- * {@code .jdbcPassword=@file:...}: a secret is a reference, which the file system reads);</li>
+ * file system's connection setting KEY ({@code parley.mail.fileSource.url}, {@code .user},
+ * {@code .password=@file:...}: a secret is a reference, which the file system reads);</li>
  * <li>or {@code parley.mail.root} is a {@code filesource:} URL, which names the file system and
  * its connection settings itself ({@code filesource:/mail?sourcetype=jdbc&...}).</li>
  * </ol>
@@ -23,7 +23,7 @@ import us.bringardner.parley.files.FileSourceFactory;
  */
 public final class MaildropRoot {
 
-	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&jdbcUrl=...}) */
+	/** The scheme of a root given as a URL ({@code filesource:/mail?sourcetype=jdbc&url=...}) */
 	public static final String URL_SCHEME = "filesource:";
 
 	private MaildropRoot() {
@@ -36,8 +36,8 @@ public final class MaildropRoot {
 
 	/**
 	 * A file system's connection settings: every setting named PREFIX + KEY in SETTINGS, as KEY
-	 * ({@code parley.mail.fileSource.jdbcUrl} with the prefix {@code parley.mail.fileSource.} gives
-	 * {@code jdbcUrl}).
+	 * ({@code parley.mail.fileSource.url} with the prefix {@code parley.mail.fileSource.} gives
+	 * {@code url}).
 	 */
 	public static Properties connectionSettings(Properties settings, String prefix) {
 		Properties ret = new Properties();
