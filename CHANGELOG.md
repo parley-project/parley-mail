@@ -2,6 +2,18 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Added (2026-11-02: mailbox ACLs, To-Do 3.4)
+
+- **Per-mailbox access control lists (RFC 4314)** in a `.imap-acl` file in each mailbox's folder: `MailboxAcl` (the
+  file format, rights and their calculation) and `MailStore.getAcl`, `getEffectiveAcl`, `setRights`, `deleteRights`,
+  `rightsOf`. `new MailStore(inbox, registry, owner)` names the owner, whose mailboxes without a file give the owner
+  every right. `MailStore.create(name, specialUse, creator)` copies the parent's ACL and gives the creator every right;
+  RENAME moves an ACL with its mailbox (renaming INBOX copies INBOX's), DELETE removes it.
+
+### Changed (2026-11-02: parley-net's IPrincipal split, To-Do 3.2)
+
+- **`SaslPrep` moved to parley-net** (`us.bringardner.parley.net.sasl.SaslPrep`).
+
 ### Changed (2026-11-02: durations, To-Do 2.19)
 
 - **`<prefix>.autologout` is a duration** (`10m`, `30m`, `90s`; a bare number is still milliseconds), read with

@@ -34,6 +34,10 @@ import us.bringardner.parley.net.lock.NamedLock;
  * Encoded names never contain ".", so they can't clash with message files or the
  * hidden index files. POP3 ignores names starting with "." and directories, so
  * it sees only INBOX.
+ * <p>
+ * Each mailbox's access control list is a {@value MailboxAcl#FILE} file in its directory
+ * (RFC 4314): RENAME takes it along, DELETE removes it and CREATE copies the parent's
+ * ({@link #create(String, String, String)}).
  */
 public final class MailStore {
 
@@ -85,10 +89,28 @@ public final class MailStore {
 	private final FileSource inbox;
 	private final MailboxRegistry registry;
 	private final Object subscriptionLock = new Object();
+	/** The user whose mailboxes these are (full login address), or null when not known. */
+	private final String owner;
 
+	/** A store whose owner isn't known (delivery): its ACLs give no one any rights by default. */
 	public MailStore(FileSource inbox, MailboxRegistry registry) {
+		this(inbox, registry, null);
+	}
+
+	/**
+	 * @param owner the user whose mailboxes these are (the full login address): a mailbox
+	 * without an ACL gives the owner every right ({@link MailboxAcl})
+	 * @since 2.0.0
+	 */
+	public MailStore(FileSource inbox, MailboxRegistry registry, String owner) {
 		this.inbox = inbox;
 		this.registry = registry;
+		this.owner = owner;
+	}
+
+	/** @return the user whose mailboxes these are, or null @since 2.0.0 */
+	public String getOwner() {
+		return owner;
 	}
 
 	/** What runs under the tree lock. */
@@ -434,10 +456,149 @@ public final class MailStore {
 	 * mailbox becomes selectable.
 	 */
 	public void create(String name, String specialUse) throws IOException {
+		create(name, specialUse, owner);
+	}
+
+	/**
+	 * CREATE by a user: as {@link #create(String, String)}, and the new mailbox's ACL is a copy
+	 * of its parent's with the creator given every right (RFC 4314 section 4). A mailbox the
+	 * owner creates under a parent with no ACL has none either (the owner's default).
+	 *
+	 * @param creator who creates it (full login address); null for the owner
+	 * @since 2.0.0
+	 */
+	public void create(String name, String specialUse, String creator) throws IOException {
 		String n = normalize(name);
+		String who = creator == null ? owner : creator;
 		underTree(Mode.EXCLUSIVE, () -> {
+			MailboxAcl parent = parentAclLocked(n);
 			createLocked(n, specialUse);
+			if (parent != null || (who != null && !who.equals(owner))) {
+				MailboxAcl acl = parent != null ? parent : MailboxAcl.ownerDefault(owner);
+				if (who != null) {
+					acl = acl.with(who, MailboxAcl.ALL);
+				}
+				acl.write(directory(n));
+			}
 			return null;
+		});
+	}
+
+	/** The ACL of the nearest existing parent of a name, or null (none, or no file) */
+	private MailboxAcl parentAclLocked(String name) throws IOException {
+		int i = name.lastIndexOf(MailboxConstants.DELIMITER);
+		while (i > 0) {
+			String parent = name.substring(0, i);
+			FileSource dir;
+			try {
+				dir = directory(parent);
+			} catch (StoreException e) {
+				return null;
+			}
+			if (dir.isDirectory()) {
+				return MailboxAcl.read(dir);
+			}
+			i = parent.lastIndexOf(MailboxConstants.DELIMITER);
+		}
+		return null;
+	}
+
+	// ------------------------------------------------------------------ access control (RFC 4314)
+
+	/**
+	 * A mailbox's ACL.
+	 *
+	 * @return the list, or null when the mailbox has no {@value MailboxAcl#FILE} (the owner's
+	 * default rights only)
+	 * @throws StoreException NONEXISTENT if the mailbox doesn't exist
+	 * @since 2.0.0
+	 */
+	public MailboxAcl getAcl(String name) throws IOException {
+		FileSource dir = directory(name);
+		if (!dir.isDirectory()) {
+			throw new StoreException(MailboxConstants.CODE_NONEXISTENT, "No such mailbox");
+		}
+		return MailboxAcl.read(dir);
+	}
+
+	/**
+	 * The ACL as it applies: the file's, or the owner's default when there is none.
+	 * @since 2.0.0
+	 */
+	public MailboxAcl getEffectiveAcl(String name) throws IOException {
+		MailboxAcl acl = getAcl(name);
+		return acl != null ? acl : MailboxAcl.ownerDefault(owner);
+	}
+
+	/**
+	 * The rights a user has on a mailbox from its ACL ({@link MailboxAcl#rightsOf}); the
+	 * server's permissions still limit them ({@link MailboxAcl#limit}).
+	 *
+	 * @return the rights, "" for a mailbox that doesn't exist
+	 * @since 2.0.0
+	 */
+	public String rightsOf(String name, String user, java.util.Collection<String> groups) throws IOException {
+		FileSource dir;
+		try {
+			dir = directory(name);
+		} catch (StoreException e) {
+			return "";
+		}
+		if (!dir.isDirectory()) {
+			return "";
+		}
+		return MailboxAcl.rightsOf(MailboxAcl.read(dir), owner, user, groups);
+	}
+
+	/**
+	 * SETACL: change one identifier's rights ({@link MailboxAcl#modify}: +rights, -rights or
+	 * rights). A mailbox without a file gets one, starting from the owner's default.
+	 *
+	 * @return the identifier's rights now
+	 * @throws IllegalArgumentException for a bad identifier or right
+	 * @since 2.0.0
+	 */
+	public String setRights(String name, String identifier, String change) throws IOException {
+		String n = normalize(name);
+		MailboxAcl.checkIdentifier(identifier);
+		return underTree(Mode.EXCLUSIVE, () -> {
+			FileSource dir = directory(n);
+			if (!dir.isDirectory()) {
+				throw new StoreException(MailboxConstants.CODE_NONEXISTENT, "No such mailbox");
+			}
+			MailboxAcl acl = MailboxAcl.read(dir);
+			if (acl == null) {
+				acl = MailboxAcl.ownerDefault(owner);
+			}
+			String rights = MailboxAcl.modify(acl.get(identifier), change);
+			acl.with(identifier, rights).write(dir);
+			return rights;
+		});
+	}
+
+	/**
+	 * DELETEACL: remove one identifier's entry (a negative entry is "-" and the identifier).
+	 *
+	 * @return false if it had none
+	 * @since 2.0.0
+	 */
+	public boolean deleteRights(String name, String identifier) throws IOException {
+		String n = normalize(name);
+		MailboxAcl.checkIdentifier(identifier);
+		return underTree(Mode.EXCLUSIVE, () -> {
+			FileSource dir = directory(n);
+			if (!dir.isDirectory()) {
+				throw new StoreException(MailboxConstants.CODE_NONEXISTENT, "No such mailbox");
+			}
+			MailboxAcl acl = MailboxAcl.read(dir);
+			if (acl == null) {
+				acl = MailboxAcl.ownerDefault(owner);
+			}
+			if (acl.get(identifier) == null) {
+				return false;
+			}
+			acl.without(identifier).write(dir);
+			return true;
 		});
 	}
 
@@ -537,6 +698,11 @@ public final class MailStore {
 		}
 		if (MailboxConstants.INBOX.equals(from)) {
 			createLocked(to, null);
+			// INBOX stays, so its ACL is copied to the new mailbox rather than moved
+			MailboxAcl inboxAcl = MailboxAcl.read(inbox);
+			if (inboxAcl != null) {
+				inboxAcl.write(target);
+			}
 			Mailbox src = registry.acquire(inbox);
 			Mailbox dst = registry.acquire(target);
 			try {

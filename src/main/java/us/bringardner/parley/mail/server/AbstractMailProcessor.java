@@ -3,7 +3,7 @@ package us.bringardner.parley.mail.server;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-import us.bringardner.parley.mail.SaslPrep;
+import us.bringardner.parley.net.sasl.SaslPrep;
 import us.bringardner.parley.net.sasl.ScramCredentials;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
 import us.bringardner.parley.net.server.AccessControlUnavailableException;

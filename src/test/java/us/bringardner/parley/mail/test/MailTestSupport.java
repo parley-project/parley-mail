@@ -71,6 +71,21 @@ public final class MailTestSupport {
 			}
 
 			@Override
+			public boolean verifyPassword(IPrincipal user, byte[] credentials) throws AccessControlUnavailableException {
+				throw new AccessControlUnavailableException("the database is down");
+			}
+
+			@Override
+			public boolean supportsApop() {
+				return true;
+			}
+
+			@Override
+			public boolean verifyApop(IPrincipal user, String timestamp, String digest) throws AccessControlUnavailableException {
+				throw new AccessControlUnavailableException("the database is down");
+			}
+
+			@Override
 			public boolean supportsScram(String hash) {
 				return true;
 			}
