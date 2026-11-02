@@ -26,6 +26,10 @@
 
 ### Added
 
+- **The settings this module reads are listed** in `META-INF/parley/settings.list`, so a Parley server's
+  start-up check (parley-net's `KnownSettings`, To-Do 2.16) knows them and warns only about a setting
+  nothing reads (and parley-mail-admin's `parley.mail.admin.*`, which share `parley-mail.properties`). A test
+  checks the list has every name the code here reads.
 - **Settings the suite shares**, used by every mail server that has none of its own: `parley.mail.users`
   (the user file, read again when it changes; one `FileBasedAcl` per file for the servers of one launcher,
   in its `ServerContext`, made through `AbstractMailServer.makeIn` and found with

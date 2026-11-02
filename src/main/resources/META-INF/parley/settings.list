@@ -1,0 +1,19 @@
+# The settings parley-mail reads, for the start-up check of the mail servers
+# (format: parley-net's KnownSettings). Add a name here when code here starts reading it.
+
+# the suite's shared settings (AbstractMailServer, MaildropRoot)
+parley.mail.root
+parley.mail.fileSource
+parley.mail.fileSource.*        # each of the file system's connection settings
+parley.mail.users
+parley.mail.tls.keyStore
+parley.mail.tls.keyStorePassword
+parley.mail.tls.keyStoreType
+
+# every mail server's, under its prefix (parley.mail.pop3, parley.mail.smtp, ...)
+parley.mail.*.serverId
+parley.mail.*.autologout
+
+# parley-mail-admin's, which shares parley-mail.properties with the servers (it isn't on their
+# class path, so its names are listed here)
+parley.mail.admin.**
