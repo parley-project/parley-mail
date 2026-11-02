@@ -161,6 +161,14 @@ public final class ShareIndex {
 		}
 	}
 
+	/**
+	 * Remove an owner's lines (a user who was deleted).
+	 * @since 2.0.0
+	 */
+	public void remove(String owner) throws IOException {
+		update(owner, java.util.Collections.emptyList());
+	}
+
 	private void updateLocked(String owner, Set<String> ids, NamedLock l) throws IOException {
 		Map<String, Set<String>> all = read();
 		Set<String> before = all.get(owner);

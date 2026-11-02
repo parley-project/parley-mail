@@ -9,6 +9,10 @@
   `rightsOf`. `new MailStore(inbox, registry, owner)` names the owner, whose mailboxes without a file give the owner
   every right. `MailStore.create(name, specialUse, creator)` copies the parent's ACL and gives the creator every right;
   RENAME moves an ACL with its mailbox (renaming INBOX copies INBOX's), DELETE removes it.
+- **`MailStoreAdminMXBean`** (`MailStoreAdmin`): a mail store's ACLs for an administrator (parley-mail-admin):
+  a user's mailboxes, their ACLs, SETACL and DELETEACL, and `forgetUser` for a deleted user. Every mail server
+  made in a launcher registers one as `us.bringardner.parley:type=MailStore,name=<server>` while it runs, so
+  changes take that server's locks on the store. `MailStore.removeIdentifier` and `ShareIndex.remove` behind it.
 - **`ShareIndex`**: the maildrop root's `.imap-shares` (owner TAB identifier), which owners have shared mailboxes with
   which users, groups or anyone, kept up to date by `MailStore` (`setShareIndex`) for IMAP's Other Users namespace.
 

@@ -23,6 +23,10 @@ public abstract class AbstractMailServer extends Server {
 	public static final String MAIL_FILE_SOURCE_PROP = "parley.mail.fileSource";
 	/** Why the maildrop root couldn't be opened (start() refuses with it), or null */
 	private volatile String rootError;
+	/** How the maildrop root is shown (no secrets), or null */
+	private volatile String rootDescription;
+	/** This server's {@link us.bringardner.parley.mail.store.MailStoreAdminMXBean} while it runs, or null */
+	private javax.management.ObjectName storeAdminBean;
 	/**
 	 * The user file every mail server uses when it has no access control of its own (no
 	 * {@code <prefix>.authenticationProvider}), read again when the file changes. The servers a
@@ -246,6 +250,7 @@ public abstract class AbstractMailServer extends Server {
 		try {
 			java.util.Properties connection = MaildropRoot.isUrl(root) ? null : connectionSettings(fileSourceProp + ".");
 			maildropRoot = MaildropRoot.open(root, source, connection, fileSourceProp);
+			rootDescription = MaildropRoot.describe(root, source);
 			factory = maildropRoot.getFileSourceFactory();
 		} catch (IOException e) {
 			maildropRoot = null;
@@ -380,6 +385,7 @@ public abstract class AbstractMailServer extends Server {
 			prepared = true;
 			super.start();
 			started = true;
+			registerStoreAdmin();
 		} catch (IOException e) {
 			logError("Can't start " + getName() + ": " + e.getMessage(), e);
 			throw new java.io.UncheckedIOException(e);
@@ -400,6 +406,7 @@ public abstract class AbstractMailServer extends Server {
 
 	@Override
 	public void stop() {
+		unregisterStoreAdmin();
 		super.stop();
 		releasingStore();
 		releaseStoreClaim();
@@ -419,6 +426,31 @@ public abstract class AbstractMailServer extends Server {
 	 * connections stopped and before the store claim is given up. The default does nothing.
 	 */
 	protected void releasingStore() {
+	}
+
+	/**
+	 * In a launcher, the store's mailbox ACLs are managed through this server while it runs
+	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}, named by the server's name).
+	 */
+	private synchronized void registerStoreAdmin() {
+		ServerContext c = context;
+		if (c == null || storeAdminBean != null || maildropRoot == null) {
+			return;
+		}
+		try {
+			String d = rootDescription != null ? rootDescription : maildropRoot.getName();
+			storeAdminBean = c.register(us.bringardner.parley.mail.store.MailStoreAdminMXBean.TYPE, getName(),
+					new us.bringardner.parley.mail.store.MailStoreAdmin(maildropRoot, d, us.bringardner.parley.mail.store.MailboxRegistry.get()));
+		} catch (javax.management.JMException | RuntimeException e) {
+			logError("Can't register the mail store's JMX bean for " + getName() + ": " + e.getMessage(), e);
+		}
+	}
+
+	private synchronized void unregisterStoreAdmin() {
+		if (storeAdminBean != null && context != null) {
+			context.unregister(storeAdminBean);
+		}
+		storeAdminBean = null;
 	}
 
 	private synchronized void releaseStoreClaim() {

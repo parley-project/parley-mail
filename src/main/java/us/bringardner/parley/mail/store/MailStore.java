@@ -639,6 +639,45 @@ public final class MailStore {
 		});
 	}
 
+	/**
+	 * Take an identifier out of every mailbox's ACL here, its negative entry too (a user who
+	 * was deleted, say), and bring the share index up to date.
+	 *
+	 * @return how many entries were removed
+	 * @throws IllegalArgumentException for a bad identifier
+	 * @since 2.0.0
+	 */
+	public int removeIdentifier(String identifier) throws IOException {
+		MailboxAcl.checkIdentifier(identifier);
+		if (!inbox.isDirectory()) {
+			return 0;
+		}
+		String negative = identifier.charAt(0) == MailboxAcl.NEGATIVE ? identifier.substring(1) : MailboxAcl.NEGATIVE + identifier;
+		return underTree(Mode.EXCLUSIVE, () -> {
+			int removed = 0;
+			for (Entry e : listAll()) {
+				MailboxAcl acl = MailboxAcl.read(e.dir);
+				if (acl == null) {
+					continue;
+				}
+				MailboxAcl changed = acl;
+				for (String id : new String[] { identifier, negative }) {
+					if (changed.get(id) != null) {
+						changed = changed.without(id);
+						removed++;
+					}
+				}
+				if (changed != acl) {
+					changed.write(e.dir);
+				}
+			}
+			if (removed > 0) {
+				sharesChangedLocked();
+			}
+			return removed;
+		});
+	}
+
 	private void createLocked(String name, String specialUse) throws IOException {
 		if (MailboxConstants.INBOX.equals(name)) {
 			throw new StoreException(MailboxConstants.CODE_ALREADYEXISTS, "INBOX always exists");
