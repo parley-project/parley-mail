@@ -14,7 +14,3 @@ parley.mail.tls.keyStoreType
 parley.mail.*.serverId
 parley.mail.*.autologout
 
-# parley-mail-admin's, which shares parley-mail.properties with the servers (it isn't on their
-# class path, so its names are listed here)
-parley.mail.admin.**
-
