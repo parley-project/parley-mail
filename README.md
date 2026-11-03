@@ -12,7 +12,9 @@ built on it (`parley-smtp`, `parley-imap`, `parley-pop3`).
   each a directory of message files with an index (`Mailbox`), shared between sessions
   (`MailboxRegistry`). SMTP delivers into it, IMAP reads and manages it, and POP3 sees its INBOX.
 - `us.bringardner.parley.mail.ftp`: the suite's FTP servers (`ftp` and `ftps` in `parley.servers`): parley-ftp's
-  `FtpServer` with the suite's users, local domains and store. Needs parley-ftp on the class path (an optional
+  `FtpServer` with the suite's users, local domains and store. `FtpAcl` decides who logs in
+  (`parley.mail.ftp.loginPermission`) and where each user's root is (`primaryRoot`, `domainRoot`: folders on the
+  server's disk; by default each user's folder in the store). Needs parley-ftp on the class path (an optional
   dependency of this module).
 
 Requires Java 11 or later. Depends on `parley-files` (which brings in `parley-core` and `parley-io`).

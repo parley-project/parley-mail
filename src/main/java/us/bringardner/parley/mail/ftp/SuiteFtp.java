@@ -6,6 +6,7 @@ import java.util.Properties;
 
 import us.bringardner.parley.core.BaseObject;
 import us.bringardner.parley.files.FileSource;
+import us.bringardner.parley.files.FileSourceFactory;
 import us.bringardner.parley.ftp.server.FtpServer;
 import us.bringardner.parley.mail.server.AbstractMailServer;
 import us.bringardner.parley.mail.store.MailLocks;
@@ -56,18 +57,30 @@ final class SuiteFtp {
 		Properties connection = MaildropRoot.isUrl(root) ? null
 				: MaildropRoot.connectionSettings(c, AbstractMailServer.MAIL_FILE_SOURCE_PROP + ".");
 		FileSource mailRoot = MaildropRoot.open(root, source, connection, AbstractMailServer.MAIL_FILE_SOURCE_PROP);
-		String folderName = c.getProperty(prefix + "." + FtpProviders.ROOT, FtpProviders.DEFAULT_ROOT).trim();
-		FileSource folder = MaildropRoot.child(mailRoot, folderName.isEmpty() ? FtpProviders.DEFAULT_ROOT : folderName);
-		if (folder.getAbsolutePath().equals(mailRoot.getAbsolutePath())) {
-			throw new IOException(prefix + "." + FtpProviders.ROOT + " must be a folder under the mail root, not the root itself");
-		}
 		String queue = c.getProperty("parley.mail.smtp.queue", "").trim();
 		StoreDomains domains = new StoreDomains(MaildropRoot.child(mailRoot, queue.isEmpty() ? ".smtp-queue" : queue));
 		FileBasedAcl list = users == null || users.trim().isEmpty() ? null : sharedUsers(context, new File(users.trim()).getCanonicalFile());
+		FtpAcl acl = new FtpAcl(list, domains, c, prefix);
+
+		FileSource folder;
+		if (acl.usesServerDisk()) {
+			// the users' roots are folders on this machine's disk, which FtpAcl names in full
+			folder = FileSourceFactory.getDefaultFactory().createFileSource("/");
+		} else {
+			String folderName = c.getProperty(prefix + "." + FtpProviders.ROOT, FtpProviders.DEFAULT_ROOT).trim();
+			folder = MaildropRoot.child(mailRoot, folderName.isEmpty() ? FtpProviders.DEFAULT_ROOT : folderName);
+			if (folder.getAbsolutePath().equals(mailRoot.getAbsolutePath())) {
+				throw new IOException(prefix + "." + FtpProviders.ROOT + " must be a folder under the mail root, not the root itself");
+			}
+		}
 
 		FtpServer server = BaseObject.makeWith(c, () -> new SuiteFtpServer(port, secure, prefix, folder, mailRoot));
-		server.setAccessControl(new SuiteAcl(list, domains));
+		server.setAccessControl(acl);
 		configure(server, c, secure);
+		if (acl.usesServerDisk() && acl.primaryDomain() == null) {
+			server.logInfo("No primary domain (" + FtpAcl.PRIMARY_DOMAIN + "): every user of " + server.getName()
+					+ " gets " + prefix + "." + FtpAcl.DOMAIN_ROOT);
+		}
 		if (list == null) {
 			server.logInfo("No users file (" + AbstractMailServer.MAIL_USERS_PROP + "): no one can log in to " + server.getName());
 		}

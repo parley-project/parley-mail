@@ -2,6 +2,14 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Added (2026-11-03: FtpAcl, who logs in to the suite's FTP and where their root is)
+
+- **`FtpAcl`** (the suite's FTP servers' access control, over `SuiteAcl`), set with each server's settings:
+  `loginPermission` (only users with this permission log in, ADMIN say), `primaryRoot` (the root of the primary
+  domain's users, `parley.mail.admin.primaryDomain`) and `domainRoot` (the other domains' users' root, with
+  `{domain}` and `{name}`), both folders on the server's own disk, made at a user's first login. Without them every
+  user of a local domain logs in to their folder in the store, as before; one root without the other doesn't start.
+
 ### Added (2026-11-03: the suite's FTP servers, moved from parley-ftp)
 
 - **`us.bringardner.parley.mail.ftp`**: the launcher's `ftp` and `ftps` servers (`FtpProviders`), their access

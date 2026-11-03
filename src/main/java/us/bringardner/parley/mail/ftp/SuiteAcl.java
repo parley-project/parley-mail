@@ -23,7 +23,7 @@ import us.bringardner.parley.net.server.IServer;
  *
  * @since 2.0.0
  */
-final class SuiteAcl implements IAccessControlList {
+class SuiteAcl implements IAccessControlList {
 
 	private final IAccessControlList users;
 	private final IDomainList domains;
@@ -78,11 +78,29 @@ final class SuiteAcl implements IAccessControlList {
 			return null;
 		}
 		String name = p.getName().substring(0, p.getName().lastIndexOf('@'));
-		if (!safe(name)) {
-			return null; // it would be a path
+		if (!safe(name) || !admits(p)) {
+			return null; // a name that would be a path, or a user who may not log in
 		}
-		// a path in the server's root (the FTP folder of the store): the user can't leave it
-		return new Rooted(p, "/" + domain + "/" + name);
+		return new Rooted(p, root(domain, name));
+	}
+
+	/**
+	 * @param user the user list's principal of a user of a local domain
+	 * @return true if they may log in to FTP; here, every such user
+	 */
+	boolean admits(IPrincipal user) {
+		return true;
+	}
+
+	/**
+	 * The user's root, a path in the server's root that the user can't leave; here their folder in
+	 * the FTP folder of the store, {@code /<domain>/<name>}.
+	 *
+	 * @param domain the user's domain (a local domain, in lower case)
+	 * @param name the user's name without the domain (one folder name)
+	 */
+	String root(String domain, String name) {
+		return "/" + domain + "/" + name;
 	}
 
 	/** A name that is one folder name: no separators, no dot names, no control characters */
