@@ -2,6 +2,16 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Added (2026-11-03: the suite's FTP servers, moved from parley-ftp)
+
+- **`us.bringardner.parley.mail.ftp`**: the launcher's `ftp` and `ftps` servers (`FtpProviders`), their access
+  control list over the suite's users and local domains (`SuiteAcl`, `StoreDomains`), moved here from parley-ftp so
+  the FTP framework knows nothing of the mail suite. Same provider ids, settings (`parley.mail.ftp.*`,
+  `parley.mail.ftps.*`, `parley-mail-ftp.properties`, now in this module's settings list) and behavior.
+- parley-ftp is an **optional** dependency: the providers are always found, but only `SuiteFtp`, which makes a server,
+  uses parley-ftp, so a JVM that doesn't run `ftp` or `ftps` (and parley-smtp, -imap and -pop3, which don't inherit the
+  dependency) needs no parley-ftp. Running one without it gives a clear error.
+
 ### Changed (2026-11-02: To-Do 3.6)
 
 - **`Mailbox.copyTo(target, list, keepFlag)` and `moveTo(target, list, source, keepFlag)`**: the copies are made with

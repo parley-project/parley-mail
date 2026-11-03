@@ -17,3 +17,30 @@ parley.mail.*.autologout
 # parley-mail-admin's, which shares parley-mail.properties with the servers (it isn't on their
 # class path, so its names are listed here)
 parley.mail.admin.**
+
+# the suite's FTP servers (us.bringardner.parley.mail.ftp: ftp and ftps, moved from parley-ftp)
+prefix parley.mail.ftp
+prefix parley.mail.ftps
+parley.mail.ftp.configFile
+
+# their folder in the mail store
+parley.mail.{ftp,ftps}.root
+
+# parley-ftp's FtpServer reads these under each server's prefix
+parley.mail.{ftp,ftps}.allowForeignDataAddress
+parley.mail.{ftp,ftps}.allowedLinkTargets
+parley.mail.{ftp,ftps}.bufferSize
+parley.mail.{ftp,ftps}.connectTimeout
+parley.mail.{ftp,ftps}.dataTimeout
+parley.mail.{ftp,ftps}.externalAddress
+parley.mail.{ftp,ftps}.linger
+parley.mail.{ftp,ftps}.passivePort
+parley.mail.{ftp,ftps}.passiveMinPort
+parley.mail.{ftp,ftps}.passiveMaxPort
+parley.mail.{ftp,ftps}.requireTls
+parley.mail.{ftp,ftps}.storeAtOffset
+parley.mail.{ftp,ftps}.symlinkPolicy
+parley.mail.{ftp,ftps}.uploadMode
+
+# read by the suite's ftp to find the queue (parley-smtp's setting)
+parley.mail.smtp.queue
