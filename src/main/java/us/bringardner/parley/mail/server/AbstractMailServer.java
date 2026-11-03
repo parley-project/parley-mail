@@ -8,7 +8,6 @@ import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
 import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.Server;
-import us.bringardner.parley.net.server.ServerContext;
 
 /**
  * Base for the mail servers (POP3, SMTP, IMAP): the maildrop root directory, the idle time
@@ -24,13 +23,13 @@ public abstract class AbstractMailServer extends Server {
 	private volatile String rootError;
 	/** How the maildrop root is shown (no secrets), or null */
 	private volatile String rootDescription;
-	/** This server's {@link us.bringardner.parley.mail.store.MailStoreAdminMXBean} while it runs, or null */
-	private javax.management.ObjectName storeAdminBean;
+	/** The administration of this server's store while it runs ({@link #getStoreAdmin()}), or null */
+	private volatile us.bringardner.parley.mail.store.MailStoreAdmin storeAdmin;
 	/**
 	 * The user file every mail server uses when it has no access control of its own (no
-	 * {@code <prefix>.authenticationProvider}), read again when the file changes. The servers a
-	 * launcher runs share one list per file (in its {@link ServerContext}); a server made by code
-	 * has its own.
+	 * {@code <prefix>.authenticationProvider}), read again when the file changes. Each server reads
+	 * its own list from it; an application running several servers can give them one list instead
+	 * ({@link #getUsersFile()}, {@link #setAccessControl}).
 	 */
 	public static final String MAIL_USERS_PROP = "parley.mail.users";
 	/** The TLS key store of every mail server that has none of its own ({@code <prefix>.keyStoreName}) */
@@ -40,14 +39,9 @@ public abstract class AbstractMailServer extends Server {
 	/** The type of {@link #MAIL_TLS_KEY_STORE_PROP} (default PKCS12) */
 	public static final String MAIL_TLS_KEY_STORE_TYPE_PROP = "parley.mail.tls.keyStoreType";
 
-	/** The launcher context a provider is making a server in, on this thread ({@link #makeIn}) */
-	private static final ThreadLocal<ServerContext> MAKING_IN = new ThreadLocal<>();
-
 	private FileSource maildropRoot;
-	/** The launcher context this server was made in, or null (made by code) */
-	private final ServerContext context = MAKING_IN.get();
-	/** The id the launcher knows this server by (e.g. imaps), or null when made by code */
-	private final String serverId = context == null ? null : context.getServerIdBeingMade();
+	/** The users file this server's list was read from ({@link #MAIL_USERS_PROP}), or null */
+	private volatile java.io.File usersFile;
 	/** what {@link #useSharedSettings()} set */
 	private boolean sharedSettingsUsed;
 	private boolean sharedAcl;
@@ -77,10 +71,13 @@ public abstract class AbstractMailServer extends Server {
 	private void useSharedSettings() {
 		sharedAcl = false;
 		sharedKeyStore = false;
+		usersFile = null;
 		String users = getProperty(MAIL_USERS_PROP);
 		if (users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
 			try {
-				setAccessControl(sharedUsers(new java.io.File(users.trim())));
+				java.io.File file = new java.io.File(users.trim()).getCanonicalFile();
+				setAccessControl(users(file));
+				usersFile = file;
 				sharedAcl = true;
 			} catch (IOException e) {
 				throw new java.io.UncheckedIOException("Can't read the users file " + users + " (" + MAIL_USERS_PROP + ")", e);
@@ -119,46 +116,6 @@ public abstract class AbstractMailServer extends Server {
 		}
 	}
 
-	/**
-	 * The user list of this file: the one the launcher's servers share (made the first time, read
-	 * again when the file changes), or for a server made by code a list of its own.
-	 */
-	private us.bringardner.parley.net.server.FileBasedAcl sharedUsers(java.io.File file) throws IOException {
-		java.io.File key = file.getCanonicalFile();
-		if (context == null) {
-			return users(key);
-		}
-		// the list's own setting (how often it reads the file) is part of what is shared: servers
-		// whose settings differ get lists of their own, so none gets another server's
-		String reload = getProperty(us.bringardner.parley.net.server.FileBasedAcl.PROP_RELOAD_INTERVAL);
-		String sharedKey = SHARED_USERS_KEY + key.getPath() + (reload == null ? "" : "|" + reload.trim());
-		try {
-			return context.shared(sharedKey, us.bringardner.parley.net.server.FileBasedAcl.class, () -> users(key));
-		} catch (IOException | RuntimeException e) {
-			throw e;
-		} catch (Exception e) {
-			throw new IOException(e.getMessage(), e);
-		}
-	}
-
-	/**
-	 * The user list of this file the launcher's mail servers share, or null if none of them uses
-	 * it (yet): for an application that changed the file and wants them to read it now
-	 * ({@code reloadNow()}).
-	 */
-	public static us.bringardner.parley.net.server.FileBasedAcl sharedUsers(ServerContext context, java.io.File file) throws IOException {
-		Object o = context.get(SHARED_USERS_KEY + file.getCanonicalFile().getPath());
-		if (o == null) {
-			// one with a reload setting of its own
-			String prefix = SHARED_USERS_KEY + file.getCanonicalFile().getPath() + "|";
-			o = context.sharedKeys().stream().filter(k -> k.startsWith(prefix)).findFirst().map(context::get).orElse(null);
-		}
-		return o instanceof us.bringardner.parley.net.server.FileBasedAcl ? (us.bringardner.parley.net.server.FileBasedAcl) o : null;
-	}
-
-	/** The {@link ServerContext#shared} key of a users file's list (followed by its canonical path) */
-	public static final String SHARED_USERS_KEY = "parley.mail.users:";
-
 	private static us.bringardner.parley.net.server.FileBasedAcl users(java.io.File file) throws IOException {
 		us.bringardner.parley.net.server.FileBasedAcl acl = new us.bringardner.parley.net.server.FileBasedAcl();
 		acl.initialize(file);
@@ -166,39 +123,13 @@ public abstract class AbstractMailServer extends Server {
 	}
 
 	/**
-	 * Make a mail server for a launcher: it shares the users the context's other mail servers use
-	 * (see {@link #MAIL_USERS_PROP}). For a launcher's provider (parley-mail-admin's).
-	 */
-	public static <T extends AbstractMailServer> T makeIn(ServerContext context, java.util.concurrent.Callable<T> make) throws Exception {
-		return makeIn(context, null, make);
-	}
-
-	/**
-	 * Make a mail server for a launcher, from its own configuration: everything it reads, in its
-	 * constructor too, comes from the configuration (see parley-core's {@code BaseObject.makeWith}),
-	 * not the system properties. For a launcher's provider (parley-mail-admin's).
-	 *
-	 * @param configuration the server's own settings, or null for the system properties
+	 * @return the users file ({@link #MAIL_USERS_PROP}, canonical) this server read its list from, or
+	 * null when it has access control of its own. An application running several servers on one file
+	 * can give them one list instead, with {@link #setAccessControl} before they start.
 	 * @since 2.0.0
 	 */
-	public static <T extends AbstractMailServer> T makeIn(ServerContext context, java.util.Properties configuration,
-			java.util.concurrent.Callable<T> make) throws Exception {
-		ServerContext before = MAKING_IN.get();
-		MAKING_IN.set(context);
-		try {
-			return us.bringardner.parley.core.BaseObject.makeWith(configuration, make);
-		} finally {
-			if (before == null) {
-				MAKING_IN.remove();
-			} else {
-				MAKING_IN.set(before);
-			}
-		}
-	}
-
-	/** The launcher context this server was made in, or null */
-	public ServerContext getServerContext() {
-		return context;
+	public java.io.File getUsersFile() {
+		return usersFile;
 	}
 
 	/**
@@ -386,7 +317,7 @@ public abstract class AbstractMailServer extends Server {
 			prepared = true;
 			super.start();
 			started = true;
-			registerStoreAdmin();
+			makeStoreAdmin();
 		} catch (IOException e) {
 			logError("Can't start " + getName() + ": " + e.getMessage(), e);
 			throw new java.io.UncheckedIOException(e);
@@ -407,7 +338,7 @@ public abstract class AbstractMailServer extends Server {
 
 	@Override
 	public void stop() {
-		unregisterStoreAdmin();
+		storeAdmin = null;
 		super.stop();
 		releasingStore();
 		releaseStoreClaim();
@@ -430,29 +361,23 @@ public abstract class AbstractMailServer extends Server {
 	}
 
 	/**
-	 * In a launcher, the store's mailbox ACLs are managed through this server while it runs
-	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}, named by the server's id in
-	 * the launcher, e.g. imaps; by its name when it was made without one).
+	 * The administration of this server's store, the mailbox ACLs (RFC 4314) through this server's
+	 * locks, while it runs: whoever runs the server registers it as a management bean if it wants
+	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}; see
+	 * {@link MailServerMain#service(AbstractMailServer, String)}).
+	 *
+	 * @return the administration, or null when the server isn't running
+	 * @since 2.0.0
 	 */
-	private synchronized void registerStoreAdmin() {
-		ServerContext c = context;
-		if (c == null || storeAdminBean != null || maildropRoot == null) {
-			return;
-		}
-		try {
-			String d = rootDescription != null ? rootDescription : maildropRoot.getName();
-			storeAdminBean = c.register(us.bringardner.parley.mail.store.MailStoreAdminMXBean.TYPE, serverId != null ? serverId : getName(),
-					new us.bringardner.parley.mail.store.MailStoreAdmin(maildropRoot, d, us.bringardner.parley.mail.store.MailboxRegistry.get()));
-		} catch (javax.management.JMException | RuntimeException e) {
-			logError("Can't register the mail store's JMX bean for " + getName() + ": " + e.getMessage(), e);
-		}
+	public us.bringardner.parley.mail.store.MailStoreAdmin getStoreAdmin() {
+		return storeAdmin;
 	}
 
-	private synchronized void unregisterStoreAdmin() {
-		if (storeAdminBean != null && context != null) {
-			context.unregister(storeAdminBean);
+	private synchronized void makeStoreAdmin() {
+		if (storeAdmin == null && maildropRoot != null) {
+			String d = rootDescription != null ? rootDescription : maildropRoot.getName();
+			storeAdmin = new us.bringardner.parley.mail.store.MailStoreAdmin(maildropRoot, d, us.bringardner.parley.mail.store.MailboxRegistry.get());
 		}
-		storeAdminBean = null;
 	}
 
 	private synchronized void releaseStoreClaim() {

@@ -1,5 +1,6 @@
 package us.bringardner.parley.mail.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -11,8 +12,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
-import javax.management.MBeanServerFactory;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,12 +20,11 @@ import us.bringardner.parley.net.lock.Sharing;
 import us.bringardner.parley.net.lock.StoreClaimException;
 import us.bringardner.parley.net.server.FileBasedAcl;
 import us.bringardner.parley.net.server.IAccessControlList;
-import us.bringardner.parley.net.server.ServerContext;
 
 /**
- * The settings the mail servers share: one users list per file for the servers of one launcher
- * (not the JVM), a server with its own list (for its prefix, also after the prefix changes), and
- * the hints a refused store claim gets.
+ * The settings the mail servers share: each server reads the users file into a list of its own (an
+ * application may give servers one list instead), a server with its own list (for its prefix, also
+ * after the prefix changes), and the hints a refused store claim gets.
  */
 public class TestSharedSettings {
 
@@ -50,13 +48,8 @@ public class TestSharedSettings {
 	@TempDir
 	File dir;
 
-	private final ServerContext one = new ServerContext(MBeanServerFactory.newMBeanServer());
-	private final ServerContext two = new ServerContext(MBeanServerFactory.newMBeanServer());
-
 	@AfterEach
 	public void clear() {
-		one.close();
-		two.close();
 		for (String p : new String[] { AbstractMailServer.MAIL_USERS_PROP, "parley.mail.own.authenticationProvider",
 				"parley.mail.own.userFile", "parley.mail.sharedStore" }) {
 			System.clearProperty(p);
@@ -70,31 +63,20 @@ public class TestSharedSettings {
 	}
 
 	@Test
-	public void theServersOfOneLauncherShareTheUsers() throws Exception {
+	public void eachServerReadsTheUsersFileAndCanBeGivenAList() throws Exception {
 		File users = file("users.txt", "tony,secret,READ|WRITE\n");
 		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, users.getPath());
-		Plain a = AbstractMailServer.makeIn(one, () -> new Plain("parley.mail.a"));
-		Plain b = AbstractMailServer.makeIn(one, () -> new Plain("parley.mail.b"));
-		Plain c = AbstractMailServer.makeIn(two, () -> new Plain("parley.mail.a"));
+		Plain a = new Plain("parley.mail.a");
+		Plain b = new Plain("parley.mail.b");
 		IAccessControlList acl = a.getAccessControl();
 		assertNotNull(acl);
 		assertNotNull(acl.getPrincipal("tony"));
+		assertNotSame(acl, b.getAccessControl(), "a list of its own");
+		assertEquals(users.getCanonicalFile(), a.getUsersFile(), "the file it read, for an application that shares one list");
+
+		// an application running both gives them one list
+		b.setAccessControl(acl);
 		assertSame(acl, b.getAccessControl());
-		assertSame(acl, AbstractMailServer.sharedUsers(one, users));
-		assertSame(one, a.getServerContext());
-		assertNotSame(acl, c.getAccessControl(), "another launcher has its own");
-		assertNull(AbstractMailServer.sharedUsers(new ServerContext(MBeanServerFactory.newMBeanServer()), users));
-
-		Plain byCode = new Plain("parley.mail.a");
-		assertNull(byCode.getServerContext());
-		assertNotNull(byCode.getAccessControl());
-		assertNotSame(acl, byCode.getAccessControl(), "made by code: a list of its own");
-
-		// the application changed the file: the shared list reads it now
-		Files.write(users.toPath(), "tony,secret,READ\njose,other,READ\n".getBytes(StandardCharsets.UTF_8));
-		users.setLastModified(System.currentTimeMillis() + 5000);
-		AbstractMailServer.sharedUsers(one, users).reloadNow();
-		assertNotNull(b.getAccessControl().getPrincipal("jose"));
 	}
 
 	@Test
@@ -102,16 +84,14 @@ public class TestSharedSettings {
 		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, file("users.txt", "tony,secret,READ\n").getPath());
 		System.setProperty("parley.mail.own.authenticationProvider", FileBasedAcl.class.getName());
 		System.setProperty("parley.mail.own.userFile", file("own.txt", "jose,other,READ\n").getPath());
-		Plain shared = AbstractMailServer.makeIn(one, () -> new Plain("parley.mail.a"));
-		Plain s = AbstractMailServer.makeIn(one, () -> {
-			Plain p = new Plain("parley.mail.a");
-			p.prefix("parley.mail.own"); // as a submission server's prefix is set after it's made
-			return p;
-		});
+		Plain shared = new Plain("parley.mail.a");
+		Plain s = new Plain("parley.mail.a");
+		s.prefix("parley.mail.own"); // as a submission server's prefix is set after it's made
 		IAccessControlList acl = s.getAccessControl();
 		assertNotSame(shared.getAccessControl(), acl);
 		assertNotNull(acl.getPrincipal("jose"));
 		assertNull(acl.getPrincipal("tony"));
+		assertNull(s.getUsersFile(), "its own list isn't the users file's");
 	}
 
 	@Test
@@ -137,8 +117,8 @@ public class TestSharedSettings {
 		ca.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersA.getPath());
 		java.util.Properties cb = new java.util.Properties();
 		cb.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersB.getPath());
-		Plain a = AbstractMailServer.makeIn(one, ca, () -> new Plain("parley.mail.a"));
-		Plain b = AbstractMailServer.makeIn(one, cb, () -> new Plain("parley.mail.a"));
+		Plain a = us.bringardner.parley.core.BaseObject.makeWith(ca, () -> new Plain("parley.mail.a"));
+		Plain b = us.bringardner.parley.core.BaseObject.makeWith(cb, () -> new Plain("parley.mail.a"));
 		assertNotNull(a.getAccessControl().getPrincipal("tony"));
 		assertNull(a.getAccessControl().getPrincipal("jose"));
 		assertNotNull(b.getAccessControl().getPrincipal("jose"));

@@ -8,13 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Properties;
 
-import javax.management.MBeanServerFactory;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import us.bringardner.parley.files.FileSource;
-import us.bringardner.parley.net.server.ServerContext;
 
 /**
  * How a server finds a mail store that isn't on its own disk, the same for any file system:
@@ -27,11 +25,8 @@ import us.bringardner.parley.net.server.ServerContext;
  */
 public class TestMaildropRoot {
 
-	private final ServerContext context = new ServerContext(MBeanServerFactory.newMBeanServer());
-
 	@AfterEach
 	public void close() {
-		context.close();
 		RecordingFileSourceFactory.last = null;
 	}
 
@@ -40,7 +35,7 @@ public class TestMaildropRoot {
 		for (int i = 0; i < settings.length; i += 2) {
 			c.setProperty(settings[i], settings[i + 1]);
 		}
-		TestSharedSettings.Plain p = AbstractMailServer.makeIn(context, c, () -> new TestSharedSettings.Plain("parley.mail.a"));
+		TestSharedSettings.Plain p = us.bringardner.parley.core.BaseObject.makeWith(c, () -> new TestSharedSettings.Plain("parley.mail.a"));
 		p.initMaildropRoot(AbstractMailServer.MAIL_FILE_SOURCE_PROP, null, AbstractMailServer.MAIL_ROOT_PROP, null, null, null);
 		return p;
 	}
