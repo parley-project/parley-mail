@@ -364,7 +364,7 @@ public abstract class AbstractMailServer extends Server {
 	 * The administration of this server's store, the mailbox ACLs (RFC 4314) through this server's
 	 * locks, while it runs: whoever runs the server registers it as a management bean if it wants
 	 * ({@link us.bringardner.parley.mail.store.MailStoreAdminMXBean}; see
-	 * {@link MailServerMain#service(AbstractMailServer, String)}).
+	 * {@link MailServerMain#service(AbstractMailServer, String, String)}).
 	 *
 	 * @return the administration, or null when the server isn't running
 	 * @since 2.0.0
