@@ -9,7 +9,6 @@ import us.bringardner.parley.files.FileSourceFactory;
 import us.bringardner.parley.net.server.IAccessControlList;
 import us.bringardner.parley.net.server.Server;
 import us.bringardner.parley.net.server.ServerContext;
-import us.bringardner.parley.net.server.ServerProvider;
 
 /**
  * Base for the mail servers (POP3, SMTP, IMAP): the maildrop root directory, the idle time
@@ -168,7 +167,7 @@ public abstract class AbstractMailServer extends Server {
 
 	/**
 	 * Make a mail server for a launcher: it shares the users the context's other mail servers use
-	 * (see {@link #MAIL_USERS_PROP}). For {@link ServerProvider#create(ServerContext)}.
+	 * (see {@link #MAIL_USERS_PROP}). For a launcher's provider (parley-mail-admin's).
 	 */
 	public static <T extends AbstractMailServer> T makeIn(ServerContext context, java.util.concurrent.Callable<T> make) throws Exception {
 		return makeIn(context, null, make);
@@ -177,7 +176,7 @@ public abstract class AbstractMailServer extends Server {
 	/**
 	 * Make a mail server for a launcher, from its own configuration: everything it reads, in its
 	 * constructor too, comes from the configuration (see parley-core's {@code BaseObject.makeWith}),
-	 * not the system properties. For {@link ServerProvider#create(ServerContext, java.util.Properties)}.
+	 * not the system properties. For a launcher's provider (parley-mail-admin's).
 	 *
 	 * @param configuration the server's own settings, or null for the system properties
 	 * @since 2.0.0

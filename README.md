@@ -11,11 +11,6 @@ built on it (`parley-smtp`, `parley-imap`, `parley-pop3`).
 - `us.bringardner.parley.mail.store`: the mailbox store: one user's mailboxes (`MailStore`),
   each a directory of message files with an index (`Mailbox`), shared between sessions
   (`MailboxRegistry`). SMTP delivers into it, IMAP reads and manages it, and POP3 sees its INBOX.
-- `us.bringardner.parley.mail.ftp`: the suite's FTP servers (`ftp` and `ftps` in `parley.servers`): parley-ftp's
-  `FtpServer` with the suite's users, local domains and store. `FtpAcl` decides who logs in
-  (`parley.mail.ftp.loginPermission`) and where each user's root is (`primaryRoot`, `domainRoot`: folders on the
-  server's disk; by default each user's folder in the store). Needs parley-ftp on the class path (an optional
-  dependency of this module).
 
 Requires Java 11 or later. Depends on `parley-files` (which brings in `parley-core` and `parley-io`).
 
@@ -35,13 +30,15 @@ Requires Java 11 or later. Depends on `parley-files` (which brings in `parley-co
 
 ## Running the mail suite
 
-The servers (parley-smtp, parley-imap, parley-pop3) each offer parley-net `ServerProvider`s, so they
-run alone, several in one process, or under a service manager, as any user. Run one with its own
-`main` (`java ... us.bringardner.parley.pop3.server.Pop3Server`), or several with parley-net's
-launcher and every module on the class path:
+The servers (parley-smtp, parley-imap, parley-pop3) run alone, several in one process, or under a
+service manager, as any user. Run one protocol's servers with its own `main`
+(`java ... us.bringardner.parley.pop3.server.Pop3Server`). Running several together, sharing one
+user list and store, is the mail suite's application, parley-mail-admin: its launcher
+(`us.bringardner.parley.mail.admin.server.LauncherMain`, in parley-mail-admin's server jar) runs the
+ids `parley.servers` lists, each server on its own (one that fails doesn't stop the others):
 
 ```
-java -cp ... us.bringardner.parley.net.server.ServerMain parley.servers smtp,submission,imap,pop3
+java -cp ... us.bringardner.parley.mail.admin.server.LauncherMain parley.servers smtp,submission,imap,pop3
 ```
 
 | Id | Server | Port setting (default) |
@@ -65,7 +62,7 @@ server added to it can be started, and one taken out of it is off once it is sto
 
 Each mail server is written as if it were the only server: it is made from a configuration of its
 own and reads nothing else (not the system properties, not another server's settings), so nothing
-changes when it shares a process with other servers. The launcher builds each server's
+changes when it shares a process with other servers. The suite's launcher builds each server's
 configuration from `parley-mail.properties` in the settings folder (`/etc/parley`, or the folder of
 the file `PARLEY_CONF` names), then its own file (`parley-smtp.properties`, `parley-imap.properties`,
 `parley-pop3.properties`), then the JVM's `-D` options and the command line. A setting's name means
@@ -94,7 +91,7 @@ A store without the file isn't used: making it is an administrator's job
 
 Each server is a JMX bean, `us.bringardner.parley:type=Server,name=<id>` (state, port,
 connections, start, stop, restart), and each SMTP server's queue is
-`us.bringardner.parley:type=MailQueue,name=<id>`; see parley-net's README for the launcher.
+`us.bringardner.parley:type=MailQueue,name=<id>`; see parley-mail-admin's README for the launcher.
 
 ## Build
 

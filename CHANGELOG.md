@@ -2,6 +2,15 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+
+### Changed (2026-11-03: the suite's deployment pieces moved to parley-mail-admin)
+
+- **`MailServerProvider` and the suite's FTP servers (`us.bringardner.parley.mail.ftp`: `FtpProviders`, `FtpAcl`,
+  `SuiteAcl`, `StoreDomains`) moved to parley-mail-admin** (`us.bringardner.parley.mail.admin.server`), with the
+  launcher, so parley-mail is framework only: messages, the mailbox store and the mail servers' base classes.
+  parley-mail no longer depends on parley-ftp and registers no server providers. The FTP settings
+  (`parley.mail.ftp.*`, `parley.mail.ftps.*`) are listed by parley-mail-admin now.
+
 ### Added (2026-11-03: FtpAcl, who logs in to the suite's FTP and where their root is)
 
 - **`FtpAcl`** (the suite's FTP servers' access control, over `SuiteAcl`), set with each server's settings:

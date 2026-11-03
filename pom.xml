@@ -112,16 +112,6 @@
 			<version>${project.version}</version>
 		</dependency>
 
-		<!-- The mail suite's FTP servers (us.bringardner.parley.mail.ftp, the ftp and ftps providers) run
-		     parley-ftp's FtpServer. Optional: a JVM that runs ftp or ftps puts parley-ftp on its class path;
-		     the mail servers don't need it, so it isn't passed on to parley-smtp, -imap and -pop3. -->
-		<dependency>
-			<groupId>us.bringardner.parley</groupId>
-			<artifactId>parley-ftp</artifactId>
-			<version>${project.version}</version>
-			<optional>true</optional>
-		</dependency>
-
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter</artifactId>
