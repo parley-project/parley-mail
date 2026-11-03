@@ -64,8 +64,8 @@ final class SuiteFtp {
 
 		FileSource folder;
 		if (acl.usesServerDisk()) {
-			// the users' roots are folders on this machine's disk, which FtpAcl names in full
-			folder = FileSourceFactory.getDefaultFactory().createFileSource("/");
+			// the users' roots are folders on this machine's disk, all in the one FtpAcl names
+			folder = FileSourceFactory.getDefaultFactory().createFileSource(acl.serverDiskBase());
 		} else {
 			String folderName = c.getProperty(prefix + "." + FtpProviders.ROOT, FtpProviders.DEFAULT_ROOT).trim();
 			folder = MaildropRoot.child(mailRoot, folderName.isEmpty() ? FtpProviders.DEFAULT_ROOT : folderName);

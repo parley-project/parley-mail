@@ -108,7 +108,6 @@ public class TestFtpAcl {
 	@Test
 	public void thePrimaryDomainsAdminIsRootedAtPrimaryRoot() throws Exception {
 		int port = adminsOnDisk();
-		assertTrue(!home().exists(), "made on the first login");
 		byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
 		try (RawFtp ftp = new RawFtp(port)) {
 			assertEquals(230, login(ftp, "boss@example.com"));
@@ -116,11 +115,13 @@ public class TestFtpAcl {
 			ftp.sendData("STOR a.txt", data);
 		}
 		assertArrayEquals(data, Files.readAllBytes(new File(home(), "a.txt").toPath()));
+		assertTrue(new File(home(), ".parley-net-locks").isDirectory(), "the lock folder is in the server's root, not /");
 	}
 
 	@Test
 	public void anotherDomainsAdminIsRootedInItsDomainsFolder() throws Exception {
 		int port = adminsOnDisk();
+		assertTrue(!new File(home(), "other.org").exists(), "made on the first login");
 		byte[] data = "other".getBytes(StandardCharsets.UTF_8);
 		try (RawFtp ftp = new RawFtp(port)) {
 			assertEquals(230, login(ftp, "chief@other.org"));
@@ -142,6 +143,20 @@ public class TestFtpAcl {
 			assertEquals(230, login(ftp, "boss@example.com"));
 			assertArrayEquals("x".getBytes(StandardCharsets.UTF_8), ftp.receive("RETR other.org/x.txt"));
 		}
+	}
+
+	@Test
+	public void theServersRootIsTheFolderTheRootsShare() throws Exception {
+		File base = new File(dir, "data");
+		int port = suite("parley.mail.ftp.loginPermission=ADMIN", "parley.mail.ftp.primaryRoot=" + base.getPath() + "/home",
+				"parley.mail.ftp.domainRoot=" + base.getPath() + "/sites/{domain}");
+		assertEquals(ServerLauncher.State.RUNNING, launcher.getState("ftp"));
+		assertTrue(new File(base, ".parley-net-locks").isDirectory(), "the server's lock folder is in the shared folder");
+		try (RawFtp ftp = new RawFtp(port)) {
+			assertEquals(230, login(ftp, "chief@other.org"));
+			ftp.sendData("STOR d.txt", "d".getBytes(StandardCharsets.UTF_8));
+		}
+		assertTrue(new File(base, "sites/other.org/d.txt").isFile());
 	}
 
 	@Test

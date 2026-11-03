@@ -9,6 +9,9 @@
   domain's users, `parley.mail.admin.primaryDomain`) and `domainRoot` (the other domains' users' root, with
   `{domain}` and `{name}`), both folders on the server's own disk, made at a user's first login. Without them every
   user of a local domain logs in to their folder in the store, as before; one root without the other doesn't start.
+- With `primaryRoot` and `domainRoot`, the FTP server's own root is the deepest folder they share (`/data/home` for
+  `/data/home` and `/data/home/{domain}`), where it keeps its lock folder; it was `/`, which a server running as a
+  service account can't write, so it didn't start.
 
 ### Added (2026-11-03: the suite's FTP servers, moved from parley-ftp)
 

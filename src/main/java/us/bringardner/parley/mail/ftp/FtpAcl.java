@@ -25,8 +25,9 @@ import us.bringardner.parley.net.server.Permission;
  * </ul>
  * {@code primaryRoot} and {@code domainRoot} go together: with neither, each user's root is their
  * folder in the store ({@code <root>/<domain>/<name>}, as before); with both, the roots are on the
- * server's disk. A root that doesn't exist is made when its user logs in, so the server's account
- * needs to be able to write where it goes. Users can't leave their root.
+ * server's disk, and the FTP server's own root is the deepest folder they have in common (/data/home
+ * for the examples), where it keeps its lock folder. A root that doesn't exist is made when its user
+ * logs in, so the server's account needs to be able to write there. Users can't leave their root.
  *
  * @since 2.0.0
  */
@@ -45,6 +46,7 @@ final class FtpAcl extends SuiteAcl {
 	private final String primaryDomain;
 	private final String primaryRoot;
 	private final String domainRoot;
+	private final String base;
 
 	/**
 	 * @param users the user list the mail servers share; null: no one can log in
@@ -64,6 +66,30 @@ final class FtpAcl extends SuiteAcl {
 		if ((primaryRoot == null) != (domainRoot == null)) {
 			throw new IOException(prefix + "." + PRIMARY_ROOT + " and " + prefix + "." + DOMAIN_ROOT + " go together: set both or neither");
 		}
+		this.base = primaryRoot == null ? null : base(primaryRoot, domainRoot);
+	}
+
+	/**
+	 * The folder every root is in: the deepest folder primaryRoot and domainRoot (up to its first
+	 * {domain} or {name}) have in common. It is the FTP server's own root, where the server keeps
+	 * its lock folder, so the server's account must be able to write there.
+	 */
+	private static String base(String primary, String domain) {
+		String[] a = primary.split("/");
+		String[] b = domain.split("/");
+		StringBuilder ret = new StringBuilder();
+		for (int i = 1; i < a.length && i < b.length; i++) {
+			if (b[i].contains("{") || !a[i].equals(b[i])) {
+				break;
+			}
+			ret.append('/').append(a[i]);
+		}
+		return ret.length() == 0 ? "/" : ret.toString();
+	}
+
+	/** @return the folder on the server's disk every user's root is in (the FTP server's root), or null in the store */
+	String serverDiskBase() {
+		return base;
 	}
 
 	/** @return true if the roots are on the server's disk (primaryRoot and domainRoot are set) */
@@ -87,7 +113,10 @@ final class FtpAcl extends SuiteAcl {
 			return super.root(domain, name);
 		}
 		String template = domain.equals(primaryDomain) ? primaryRoot : domainRoot;
-		return template.replace("{domain}", domain).replace("{name}", name);
+		String path = template.replace("{domain}", domain).replace("{name}", name);
+		// a path in the server's root (the base)
+		String rel = base.equals("/") ? path : path.substring(base.length());
+		return rel.isEmpty() ? "/" : rel;
 	}
 
 	private static String setting(Properties c, String name) {
