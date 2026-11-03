@@ -3,6 +3,20 @@
 ## parley-mail 2.0.0 (unreleased)
 
 
+### Changed (2026-11-03: what's left of deployment leaves the framework, To-Do 15.1-15.3)
+
+- **`StoreSetup` moved to parley-mail-admin** (`us.bringardner.parley.mail.admin.server.StoreSetup`): making a
+  store's settings at install time is the application's. `settings.list` no longer lists `parley.mail.admin.**`.
+- **A mail server shares nothing by itself**: `AbstractMailServer.makeIn`, `sharedUsers`, `SHARED_USERS_KEY` and
+  `getServerContext` are gone, with parley-net's `ServerContext`. Each server reads `parley.mail.users` into a list
+  of its own; `getUsersFile()` says which file, so an application running several servers can give them one list
+  with `setAccessControl` before they start. Make a server from its configuration with parley-core's
+  `BaseObject.makeWith`.
+- **The store bean is registered by whoever runs the server**: `getStoreAdmin()` is the store's administration
+  while the server runs (the server no longer registers it). `MailServerMain.service(server, name, beanName)` runs
+  a server for a `main` with it as `us.bringardner.parley:type=MailStore,name=<beanName>` on the platform MBean
+  server, so a server on its own can have its mailbox ACLs managed too.
+
 ### Changed (2026-11-03: the suite's deployment pieces moved to parley-mail-admin)
 
 - **`MailServerProvider` and the suite's FTP servers (`us.bringardner.parley.mail.ftp`: `FtpProviders`, `FtpAcl`,

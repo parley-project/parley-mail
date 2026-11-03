@@ -10,7 +10,7 @@ import us.bringardner.parley.files.FileSourceFactory;
 
 /**
  * Opening a mail store's root from settings, the same way for every program that uses the store
- * (the mail servers, parley-mail-admin, parley-servers-setup's StoreSetup), on any file system:
+ * (the mail servers, and an application that manages the store), on any file system:
  * <ol>
  * <li>{@code parley.mail.root} is a path on the file system {@code parley.mail.fileSource} names
  * (the local disk when it isn't set), and each {@code parley.mail.fileSource.KEY} setting is that

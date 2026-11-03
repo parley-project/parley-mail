@@ -5,9 +5,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The mailbox ACLs (RFC 4314) of a mail store, for an administrator (parley-mail-admin): each
- * running mail server registers one as {@code us.bringardner.parley:type=MailStore,name=ID}, and
- * every change goes through that server's locks on the store, as SETACL does.
+ * The mailbox ACLs (RFC 4314) of a mail store, for an administrator: whoever runs a mail server
+ * registers its store's ({@code AbstractMailServer.getStoreAdmin()}) as
+ * {@code us.bringardner.parley:type=MailStore,name=ID} while it runs (a server's own main does,
+ * see {@code MailServerMain}), and every change goes through that server's locks on the store, as
+ * SETACL does.
  * <p>
  * A user's mailboxes are named by the user (the full login address, the mailboxes' owner) and
  * the user's maildrop (the folder under the maildrop root, usually the user's name). Rights are
