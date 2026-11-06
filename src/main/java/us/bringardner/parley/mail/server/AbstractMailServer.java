@@ -6,7 +6,8 @@ import us.bringardner.parley.core.ILogger.Level;
 import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
-import us.bringardner.parley.net.server.IAccessControlList;
+import us.bringardner.parley.iam.UserRegistry;
+import us.bringardner.parley.net.server.FileUserRegistry;
 import us.bringardner.parley.net.server.Server;
 
 /**
@@ -26,10 +27,11 @@ public abstract class AbstractMailServer extends Server {
 	/** The administration of this server's store while it runs ({@link #getStoreAdmin()}), or null */
 	private volatile us.bringardner.parley.mail.store.MailStoreAdmin storeAdmin;
 	/**
-	 * The user file every mail server uses when it has no access control of its own (no
-	 * {@code <prefix>.authenticationProvider}), read again when the file changes. Each server reads
-	 * its own list from it; an application running several servers can give them one list instead
-	 * ({@link #getUsersFile()}, {@link #setAccessControl}).
+	 * The user file (parley-net's {@link FileUserRegistry} format) every mail server uses when it
+	 * has no user registry of its own (no {@code <prefix>.authenticationProvider}), read again when
+	 * the file changes. Each server reads it into a registry of its own; an application running
+	 * several servers can give them one registry instead ({@link #getUsersFile()},
+	 * {@link #setUserRegistry}).
 	 */
 	public static final String MAIL_USERS_PROP = "parley.mail.users";
 	/** The TLS key store of every mail server that has none of its own ({@code <prefix>.keyStoreName}) */
@@ -40,11 +42,12 @@ public abstract class AbstractMailServer extends Server {
 	public static final String MAIL_TLS_KEY_STORE_TYPE_PROP = "parley.mail.tls.keyStoreType";
 
 	private FileSource maildropRoot;
-	/** The users file this server's list was read from ({@link #MAIL_USERS_PROP}), or null */
+	/** The users file this server's registry was read from ({@link #MAIL_USERS_PROP}), or null */
 	private volatile java.io.File usersFile;
 	/** what {@link #useSharedSettings()} set */
 	private boolean sharedSettingsUsed;
-	private boolean sharedAcl;
+	/** The registry this server made from {@link #MAIL_USERS_PROP}, or null: its own, closed when replaced */
+	private UserRegistry sharedUsers;
 	private boolean sharedKeyStore;
 	private FileSourceFactory factory = FileSourceFactory.getDefaultFactory();
 	private volatile int autologout;
@@ -69,16 +72,17 @@ public abstract class AbstractMailServer extends Server {
 	 * ({@link #MAIL_USERS_PROP}) and the TLS key store ({@link #MAIL_TLS_KEY_STORE_PROP}).
 	 */
 	private void useSharedSettings() {
-		sharedAcl = false;
+		sharedUsers = null;
 		sharedKeyStore = false;
 		usersFile = null;
 		String users = getProperty(MAIL_USERS_PROP);
 		if (users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
 			try {
 				java.io.File file = new java.io.File(users.trim()).getCanonicalFile();
-				setAccessControl(users(file));
+				UserRegistry registry = users(file);
+				setUserRegistry(registry);
 				usersFile = file;
-				sharedAcl = true;
+				sharedUsers = registry;
 			} catch (IOException e) {
 				throw new java.io.UncheckedIOException("Can't read the users file " + users + " (" + MAIL_USERS_PROP + ")", e);
 			}
@@ -104,8 +108,12 @@ public abstract class AbstractMailServer extends Server {
 	protected void setPropertyPrefix(String propertyPrefix) {
 		super.setPropertyPrefix(propertyPrefix);
 		if (sharedSettingsUsed) {
-			if (sharedAcl) {
-				setAccessControl(null);
+			UserRegistry made = sharedUsers;
+			if (made != null) {
+				if (getUserRegistry() == made) {
+					setUserRegistry(null);
+				}
+				closeQuietly(made);
 			}
 			if (sharedKeyStore) {
 				setKeyStoreFileName(null);
@@ -116,16 +124,24 @@ public abstract class AbstractMailServer extends Server {
 		}
 	}
 
-	private static us.bringardner.parley.net.server.FileBasedAcl users(java.io.File file) throws IOException {
-		us.bringardner.parley.net.server.FileBasedAcl acl = new us.bringardner.parley.net.server.FileBasedAcl();
-		acl.initialize(file);
-		return acl;
+	private static FileUserRegistry users(java.io.File file) throws IOException {
+		FileUserRegistry registry = new FileUserRegistry();
+		registry.initialize(file);
+		return registry;
+	}
+
+	private void closeQuietly(UserRegistry registry) {
+		try {
+			registry.close();
+		} catch (IOException | RuntimeException e) {
+			logError("Can't close the user registry of " + getName(), e);
+		}
 	}
 
 	/**
-	 * @return the users file ({@link #MAIL_USERS_PROP}, canonical) this server read its list from, or
-	 * null when it has access control of its own. An application running several servers on one file
-	 * can give them one list instead, with {@link #setAccessControl} before they start.
+	 * @return the users file ({@link #MAIL_USERS_PROP}, canonical) this server read its registry from,
+	 * or null when it has a user registry of its own. An application running several servers on one
+	 * file can give them one registry instead, with {@link #setUserRegistry} before they start.
 	 * @since 2.0.0
 	 */
 	public java.io.File getUsersFile() {
@@ -209,11 +225,17 @@ public abstract class AbstractMailServer extends Server {
 		return ret == null && legacy != null ? getProperty(legacy) : ret;
 	}
 
-	/** Say so when no one can log in. */
+	/**
+	 * Say so when no one can log in: the server has no user registry (neither
+	 * {@code <prefix>.authenticationProvider}, {@link #MAIL_USERS_PROP} nor {@link #setUserRegistry}).
+	 * A login then fails with an error naming the setting (parley-net: no registry is a mistake in
+	 * the configuration, not a refused login).
+	 */
 	protected void warnIfNoAccessControl() {
-		IAccessControlList acl = getAccessControl();
-		if (acl == null) {
-			logInfo("No access control is configured for " + getName() + "; no one can log in");
+		UserRegistry registry = getUserRegistry();
+		if (registry == null) {
+			String setting = getPropertyPrefix() == null ? AUTHENTICATION_PROVIDER_PROPERTY : propertyName(AUTHENTICATION_PROVIDER_PROPERTY);
+			logInfo("No user registry is configured for " + getName() + " (" + setting + " or " + MAIL_USERS_PROP + "); no one can log in");
 		}
 	}
 

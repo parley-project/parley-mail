@@ -18,12 +18,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 import us.bringardner.parley.net.lock.Sharing;
 import us.bringardner.parley.net.lock.StoreClaimException;
-import us.bringardner.parley.net.server.FileBasedAcl;
-import us.bringardner.parley.net.server.IAccessControlList;
+import us.bringardner.parley.iam.UserRegistry;
+import us.bringardner.parley.net.server.FileUserRegistry;
 
 /**
- * The settings the mail servers share: each server reads the users file into a list of its own (an
- * application may give servers one list instead), a server with its own list (for its prefix, also
+ * The settings the mail servers share: each server reads the users file into a registry of its own (an
+ * application may give servers one registry instead), a server with its own registry (for its prefix, also
  * after the prefix changes), and the hints a refused store claim gets.
  */
 public class TestSharedSettings {
@@ -68,30 +68,30 @@ public class TestSharedSettings {
 		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, users.getPath());
 		Plain a = new Plain("parley.mail.a");
 		Plain b = new Plain("parley.mail.b");
-		IAccessControlList acl = a.getAccessControl();
+		UserRegistry acl = a.getUserRegistry();
 		assertNotNull(acl);
-		assertNotNull(acl.getPrincipal("tony"));
-		assertNotSame(acl, b.getAccessControl(), "a list of its own");
+		assertNotNull(acl.findPrincipal("tony"));
+		assertNotSame(acl, b.getUserRegistry(), "a registry of its own");
 		assertEquals(users.getCanonicalFile(), a.getUsersFile(), "the file it read, for an application that shares one list");
 
-		// an application running both gives them one list
-		b.setAccessControl(acl);
-		assertSame(acl, b.getAccessControl());
+		// an application running both gives them one registry
+		b.setUserRegistry(acl);
+		assertSame(acl, b.getUserRegistry());
 	}
 
 	@Test
 	public void aServerWithItsOwnUsersKeepsThemAlsoAfterItsPrefixChanges() throws Exception {
 		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, file("users.txt", "tony,secret,READ\n").getPath());
-		System.setProperty("parley.mail.own.authenticationProvider", FileBasedAcl.class.getName());
+		System.setProperty("parley.mail.own.authenticationProvider", FileUserRegistry.class.getName());
 		System.setProperty("parley.mail.own.userFile", file("own.txt", "jose,other,READ\n").getPath());
 		Plain shared = new Plain("parley.mail.a");
 		Plain s = new Plain("parley.mail.a");
 		s.prefix("parley.mail.own"); // as a submission server's prefix is set after it's made
-		IAccessControlList acl = s.getAccessControl();
-		assertNotSame(shared.getAccessControl(), acl);
-		assertNotNull(acl.getPrincipal("jose"));
-		assertNull(acl.getPrincipal("tony"));
-		assertNull(s.getUsersFile(), "its own list isn't the users file's");
+		UserRegistry acl = s.getUserRegistry();
+		assertNotSame(shared.getUserRegistry(), acl);
+		assertNotNull(acl.findPrincipal("jose"));
+		assertNull(acl.findPrincipal("tony"));
+		assertNull(s.getUsersFile(), "its own registry isn't the users file's");
 	}
 
 	@Test
@@ -119,10 +119,10 @@ public class TestSharedSettings {
 		cb.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersB.getPath());
 		Plain a = us.bringardner.parley.core.BaseObject.makeWith(ca, () -> new Plain("parley.mail.a"));
 		Plain b = us.bringardner.parley.core.BaseObject.makeWith(cb, () -> new Plain("parley.mail.a"));
-		assertNotNull(a.getAccessControl().getPrincipal("tony"));
-		assertNull(a.getAccessControl().getPrincipal("jose"));
-		assertNotNull(b.getAccessControl().getPrincipal("jose"));
-		assertNull(b.getAccessControl().getPrincipal("sys"), "not the system properties");
+		assertNotNull(a.getUserRegistry().findPrincipal("tony"));
+		assertNull(a.getUserRegistry().findPrincipal("jose"));
+		assertNotNull(b.getUserRegistry().findPrincipal("jose"));
+		assertNull(b.getUserRegistry().findPrincipal("sys"), "not the system properties");
 		assertSame(ca, a.getConfiguration());
 	}
 
