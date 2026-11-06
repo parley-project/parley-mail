@@ -1,114 +1,114 @@
 package us.bringardner.parley.mail.server;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
+import us.bringardner.parley.iam.AuthenticationResult;
+import us.bringardner.parley.iam.PasswordCredential;
+import us.bringardner.parley.iam.ProofCredential;
+import us.bringardner.parley.iam.UserRegistry;
 import us.bringardner.parley.net.sasl.SaslPrep;
-import us.bringardner.parley.net.sasl.ScramCredentials;
+import us.bringardner.parley.net.sasl.ScramMechanism;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
-import us.bringardner.parley.net.server.AccessControlUnavailableException;
-import us.bringardner.parley.net.server.IAccessControlList;
-import us.bringardner.parley.net.server.IPrincipal;
+import us.bringardner.parley.net.server.LoginFailures;
 import us.bringardner.parley.net.server.Server;
 
 /**
  * Base for the mail protocol sessions (POP3, SMTP, IMAP): logging in with a SASLprep'd user name and
- * password, counting failed logins, and upgrading the connection to TLS.
+ * password through the session's {@link #authenticate(us.bringardner.parley.iam.Credential)}, SASL
+ * through {@link #newSaslAuthenticator()}, and upgrading the connection to TLS.
+ * <p>
+ * Every login gives an {@link AuthenticationResult}: AUTHENTICATED, REFUSED (a wrong password, an
+ * unknown user, text SASLprep can't prepare) or UNAVAILABLE (the server's user registry can't answer
+ * now: answer with a temporary failure, never "wrong password"). Failed logins are counted, and a
+ * refusal is answered late, by parley-net (the session's login limits); after too many the command
+ * processor closes the connection once the protocol has replied
+ * ({@link #replyTooManyLoginFailures()}).
  */
 public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 
 	private static final long serialVersionUID = 1L;
-
-	private int loginFailures;
 
 	protected AbstractMailProcessor() {
 		super();
 	}
 
 	/**
-	 * Check a user name and password. Both are prepared with SASLprep (RFC 4013) first; text that
-	 * can't be prepared fails.
+	 * Log this session in with a user name and password. Both are prepared with SASLprep (RFC 4013)
+	 * first; text that can't be prepared, or an empty user name, is refused without asking the
+	 * registry, and counted as a failed login like a wrong password.
 	 *
-	 * @return the principal, or null if the login failed
+	 * @return AUTHENTICATED (the session is logged in, {@link #getPrincipal()}), REFUSED, or
+	 * UNAVAILABLE when the user registry can't answer now
+	 * @throws IllegalStateException when the server has no user registry
+	 * @since 2.0.0 (returned the principal or null)
 	 */
-	protected IPrincipal authenticate(String user, String password) {
-		user = SaslPrep.prepare(user, false);
-		password = SaslPrep.prepare(password, false);
-		if (user == null || password == null || user.isEmpty()) {
-			return null;
+	protected AuthenticationResult authenticate(String user, String password) {
+		String preparedUser = SaslPrep.prepare(user, false);
+		String preparedPassword = SaslPrep.prepare(password, false);
+		if (preparedUser == null || preparedPassword == null || preparedUser.isEmpty()) {
+			getServer().requireUserRegistry(); // no registry is a mistake in the configuration, not a refusal
+			return refuse("the user name or password can't be prepared (SASLprep)");
 		}
-		return getServer().authenticate(user, password.getBytes(StandardCharsets.UTF_8));
+		PasswordCredential credential = new PasswordCredential(preparedUser, preparedPassword.toCharArray(), getRequester());
+		try {
+			return authenticate(credential);
+		} finally {
+			credential.clear();
+		}
 	}
 
 	/**
-	 * Check a user name and password like {@link #authenticate(String, String)}, but tell a failed
-	 * login (null) from an access control list that can't answer now (the exception), so the
-	 * protocol can say "try again later" and not count a failed login.
+	 * A login refused here, before it reached the user registry (text SASLprep can't prepare, say):
+	 * counted and answered late like any other refused login (parley-net's {@link LoginFailures}).
 	 *
-	 * @return the principal, or null if the login failed
-	 * @throws AccessControlUnavailableException if the access control list can't answer now
-	 * @since 1.1.0
+	 * @param reason why, for the log
+	 * @return a REFUSED result
+	 * @since 2.0.0
 	 */
-	protected IPrincipal checkLogin(String user, String password) throws AccessControlUnavailableException {
-		user = SaslPrep.prepare(user, false);
-		password = SaslPrep.prepare(password, false);
-		if (user == null || password == null || user.isEmpty()) {
-			return null;
+	protected AuthenticationResult refuse(String reason) {
+		AuthenticationResult result = AuthenticationResult.refused(reason);
+		LoginFailures failures = getLoginFailures();
+		if (failures != null && failures.record(result)) {
+			int millis = failures.getDelayMillis();
+			if (millis > 0) {
+				try {
+					Thread.sleep(millis);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
 		}
-		return getServer().checkLogin(user, password.getBytes(StandardCharsets.UTF_8));
+		return result;
 	}
 
 	/**
-	 * The principal of a user a SASL mechanism has proven without a password check (SCRAM).
-	 * The name is prepared with SASLprep, as for {@link #authenticate(String, String)}.
+	 * A SASL authenticator for this session (AUTHENTICATE / AUTH): PLAIN and LOGIN log the session in
+	 * with SASLprep'd names and passwords; SCRAM looks the credentials up under the SASLprep'd name,
+	 * and after it succeeds {@link MailSaslAuthenticator#verified(String)} logs the session in. Use
+	 * one per AUTH command.
 	 *
-	 * @return the principal, or null if the name can't be prepared or the user isn't there
-	 * @throws AccessControlUnavailableException if the access control list can't answer now
-	 * @since 1.1.0
+	 * @since 2.0.0
 	 */
-	protected IPrincipal verifiedPrincipal(String user) throws AccessControlUnavailableException {
-		user = SaslPrep.prepare(user, false);
-		if (user == null || user.isEmpty()) {
-			return null;
-		}
-		return getServer().getVerifiedPrincipal(user);
+	public MailSaslAuthenticator newSaslAuthenticator() {
+		return new MailSaslAuthenticator(this);
 	}
 
 	/**
 	 * @param hash "SHA-1" or "SHA-256"
-	 * @return true if the server's access control list can serve SCRAM with that hash
-	 * @since 1.1.0
+	 * @return true if the server's user registry can serve SCRAM with that hash for every user, so
+	 * the mechanism may be offered; false with no registry
+	 * @since 1.1.0 (asked the access control list)
 	 */
 	public boolean supportsScram(String hash) {
-		IAccessControlList acl = getServer().getAccessControl();
-		return acl != null && acl.supportsScram(hash);
-	}
-
-	/**
-	 * The user's SCRAM credentials from the server's access control list, for the SCRAM mechanism.
-	 * The name is prepared with SASLprep first.
-	 *
-	 * @return the credentials, or null if there are none (the login then fails like a wrong password)
-	 * @throws AccessControlUnavailableException if the access control list can't answer now
-	 * @since 1.1.0
-	 */
-	public ScramCredentials getScramCredentials(String user, String hash) throws AccessControlUnavailableException {
-		IAccessControlList acl = getServer().getAccessControl();
-		user = SaslPrep.prepare(user, false);
-		if (acl == null || user == null || user.isEmpty()) {
-			return null;
-		}
-		return acl.getScramCredentials(user, hash);
+		ScramMechanism m = ScramMechanism.SHA_256.getHash().equalsIgnoreCase(hash) ? ScramMechanism.SHA_256
+				: ScramMechanism.SHA_1.getHash().equalsIgnoreCase(hash) ? ScramMechanism.SHA_1 : null;
+		UserRegistry registry = getServer().getUserRegistry();
+		return m != null && registry != null && registry.supports(ProofCredential.class, m.getStoredType());
 	}
 
 	/** True if logins must wait for TLS on this connection. */
 	public boolean isLoginBlockedUntilTls() {
 		return ((Server) getServer()).isRequireTls() && !isTls();
-	}
-
-	/** Count a failed login; true if there have been too many and the connection should close. */
-	protected boolean tooManyLoginFailures() {
-		return ((Server) getServer()).isTooManyLoginFailures(++loginFailures);
 	}
 
 	/**

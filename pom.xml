@@ -104,6 +104,12 @@
 			<artifactId>parley-net</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+		<!-- Used directly: users and logins (UserRegistry, AuthenticationResult, PasswordCredential) -->
+		<dependency>
+			<groupId>us.bringardner.parley</groupId>
+			<artifactId>parley-iam</artifactId>
+			<version>${project.version}</version>
+		</dependency>
 
 		<!-- Messages and mailboxes are stored in a FileSource; brings in parley-core and parley-io -->
 		<dependency>

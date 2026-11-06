@@ -2,6 +2,36 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-06: users and logins come from parley-iam)
+
+- **parley-mail uses parley-iam and the new parley-net**: the mail servers' user registry (a parley-iam
+  `UserRegistry`) checks logins. `parley.mail.users` is read into a parley-net `FileUserRegistry` (same file format)
+  set with `setUserRegistry`; an application running several servers on one file gives them one registry with
+  `setUserRegistry` (it was `setAccessControl`). `warnIfNoAccessControl()` keeps its name and warns when there is
+  no user registry.
+- **`AbstractMailProcessor` logs in through the session's `authenticate(Credential)`** and every login helper
+  returns an `AuthenticationResult` (AUTHENTICATED, REFUSED, UNAVAILABLE), so a protocol can tell a wrong password
+  from a registry that can't answer:
+  - `IPrincipal authenticate(String, String)` and `IPrincipal checkLogin(String, String) throws
+    AccessControlUnavailableException` are now one method, `AuthenticationResult authenticate(String user, String
+    password)` (SASLprep'd; the session is logged in when it is AUTHENTICATED).
+  - `IPrincipal verifiedPrincipal(String)` and `ScramCredentials getScramCredentials(String, String)` are replaced
+    by `MailSaslAuthenticator newSaslAuthenticator()`: parley-net's `ServerSaslAuthenticator(server, session)`
+    with SASLprep'd names; after SCRAM succeeds its `verified(user)` logs the session in, and
+    `exchangeFailed(reason)` counts a failed exchange no login check saw (a wrong SCRAM proof).
+  - `supportsScram(String hash)` asks the registry (`supports(ProofCredential.class, <SCRAM type>)`).
+  - Added `AuthenticationResult refuse(String reason)`: a login refused before it reached the registry, counted
+    like any other.
+- **Failed logins are counted by parley-net** (`LoginFailures`: the delay before the reply, the close after
+  `maxLoginAttempts`). Removed: `AbstractMailProcessor.tooManyLoginFailures()` (use the framework's
+  `isTooManyLoginFailures()` and override `replyTooManyLoginFailures()` for a goodbye).
+- **Tests**: `MailTestSupport.scramAcl()` and `downAcl()` keep their names and return a `UserRegistry` (for
+  `setUserRegistry`).
+- **Added `AbstractMailServer.findGroupNames(ParleyPrincipal)`**: the names of a user's groups, for `$group`
+  entries in mailbox ACLs (IMAP, POP3's INBOX), from the user registry's `findGroups` (parley-iam's `UserRegistry`,
+  directly or through other groups); no registry gives no groups. A registry that can't answer throws
+  `UserRegistryUnavailableException`. `MailTestSupport.downAcl()` throws it from `findGroups` and `findMembers` too.
+
 
 ### Changed (2026-11-03: what's left of deployment leaves the framework, To-Do 15.1-15.3)
 

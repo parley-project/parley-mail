@@ -12,7 +12,8 @@ built on it (`parley-smtp`, `parley-imap`, `parley-pop3`).
   each a directory of message files with an index (`Mailbox`), shared between sessions
   (`MailboxRegistry`). SMTP delivers into it, IMAP reads and manages it, and POP3 sees its INBOX.
 
-Requires Java 11 or later. Depends on `parley-files` (which brings in `parley-core` and `parley-io`).
+Requires Java 11 or later. Depends on `parley-files`, `parley-net` and `parley-iam` (which bring in `parley-core`
+and `parley-io`).
 
 ```xml
 <dependency>
@@ -53,8 +54,8 @@ implicit TLS is submission's.
 
 Running servers of several protocols together (which run, what they share, how a failure is
 handled) is an application's job. An application makes each server from its own configuration
-(parley-core's `BaseObject.makeWith`), may give the servers that read one users file one list
-(`getUsersFile()`, then `setAccessControl` before they start), and registers their beans while they
+(parley-core's `BaseObject.makeWith`), may give the servers that read one users file one user registry
+(`getUsersFile()`, then `setUserRegistry` before they start), and registers their beans while they
 run. For an example that runs them together (one launcher with `parley.servers`, JMX management, a
 web admin), see parley-mail-admin.
 
@@ -70,7 +71,7 @@ prefix of its own):
 | Setting | Meaning |
 |---|---|
 | `parley.mail.root` | The maildrop root (required: a server without one doesn't start) |
-| `parley.mail.users` | The user file (parley-net's `FileBasedAcl` format) of every server that has no `<prefix>.authenticationProvider` of its own; read again when the file changes; each server reads it into a list of its own, unless the application running it gives it one (`getUsersFile()`, `setAccessControl`) |
+| `parley.mail.users` | The user file (parley-net's `FileUserRegistry` format) of every server that has no `<prefix>.authenticationProvider` of its own; read again when the file changes; each server reads it into a user registry of its own, unless the application running it gives it one (`getUsersFile()`, `setUserRegistry`). See [Users and logins](#users-and-logins) |
 | `parley.mail.tls.keyStore`, `.keyStorePassword`, `.keyStoreType` (PKCS12) | The TLS key store of every server that has no `<prefix>.keyStoreName` of its own |
 A server's own settings use its prefix (`parley.mail.pop3`, `parley.mail.pop3s`, ...), with no
 fallback from one prefix to another; its id among the servers sharing a store is
@@ -90,6 +91,24 @@ A store without the file isn't used: making it is an administrator's job
 While a server runs, its store is the JMX bean `us.bringardner.parley:type=MailStore,name=<id>`
 (registered by whoever runs it: a server's own `main` does, through `MailServerMain`).
 
+## Users and logins
+
+Who may log in, and what they may do, comes from each server's parley-iam `UserRegistry`: the one named with
+`<prefix>.authenticationProvider`, else one read from `parley.mail.users`, else one given with `setUserRegistry()`.
+A server with none logs a warning at start, and a login then fails with an error naming the setting; there is no
+built-in user. The mail sessions (`AbstractMailProcessor`) log in through parley-net's session `authenticate`:
+
+- **Passwords** (POP3 USER/PASS, IMAP LOGIN, SASL PLAIN and LOGIN): the name and password are prepared with SASLprep
+  (RFC 4013) and checked by the registry. Text that can't be prepared is refused without asking the registry.
+- **SASL** (`newSaslAuthenticator()`, a `MailSaslAuthenticator`, parley-net's `ServerSaslAuthenticator` with SASLprep):
+  SCRAM-SHA-1 and SCRAM-SHA-256 are offered only when the registry can serve them for every user
+  (`supportsScram`); after the exchange, `verified(user)` logs the session in.
+- **Every login ends AUTHENTICATED, REFUSED or UNAVAILABLE.** UNAVAILABLE (the registry can't answer now, a database
+  outage) gets a temporary failure, never "wrong password", and isn't counted as a failed login.
+- **Failed logins are counted by parley-net** (`loginFailureDelay`, `maxLoginAttempts` of each server): a refusal is
+  answered late, and after too many the connection is closed. A SCRAM exchange that fails on a wrong proof is
+  counted too (`MailSaslAuthenticator.exchangeFailed`).
+
 ## Build
 
 ```
@@ -103,7 +122,7 @@ Tests run with a 64 MB heap, so the large-message tests only pass if message bod
 - **INBOX** is the user's POP3 maildrop: the directory named by the principal's `maildrop` parameter, or the user name, under the root. POP3 and IMAP see the same messages. A POP3 deletion appears to IMAP sessions as an expunge. Mail delivered into the maildrop appears in INBOX. New mail comes in one way, `MailStore.deliver(content, junk)` (SMTP's local delivery uses it): through `Mailbox.append`, which every new message file goes through, so it is stored with CRLF line ends and indexed.
 - **Other mailboxes** are directories under `<inbox>/.mailboxes`; a child mailbox is a subdirectory of its parent's directory. Name segments are encoded so names stay case-sensitive and safe on any file system. For example, `Sent` is stored as `_sent` and `Über` as `%C3%9Cber`. POP3 ignores names starting with "." and directories, so it only sees INBOX.
 - **New users** get Sent, Drafts, Trash, Junk and Archive, marked with their RFC 6154 special use and subscribed. The IMAP server turns this off with `parley.mail.imap.defaultMailboxes=false`.
-- **Access control (RFC 4314):** each mailbox may have a hidden `.imap-acl` file, one line per identifier: the identifier, a TAB, its rights (`lrswipkxtea`); a negative entry is `-identifier`. A user is named by the full login address (`bob@bringardner.us`), a group by `$` and its full name (`$sales@bringardner.us`, as `IPrincipal.getGroups()` gives it), and `anyone` is every logged in user. A mailbox with no file gives only its owner every right. The owner (the user whose store it is) isn't written in the file unless the owner's own rights are set, so without an entry of its own the owner keeps every right, and users who share one maildrop each keep theirs; the owner always keeps `l` and `a`. Lines starting with `#` are comments, so an identifier can't start with one. The server's permissions are a ceiling: without READ nothing, without WRITE only `l` and `r`. RENAME takes the file along, DELETE removes it, CREATE copies the parent's and gives the creator every right. It is read and written through `MailStore` (`getAcl`, `setRights`, `deleteRights`, `rightsOf`; the format and calculation are `MailboxAcl`), under the user's tree lock, so IMAP and POP3 share it. The maildrop root's hidden `.imap-shares` file (`ShareIndex`) records which owners have given rights to which identifiers, so IMAP's Other Users namespace can find the mailboxes shared with a user; `MailStore` keeps an owner's lines up to date when its ACLs change (`setShareIndex`). An administrator changes them through `MailStoreAdminMXBean`, a running server's `getStoreAdmin()`, which whoever runs the server registers as `us.bringardner.parley:type=MailStore,name=<id>` while it runs (a server's own `main` does), so the changes take that server's locks on the store; its `forgetUser` takes a deleted user out of the other users' ACLs and the share index.
+- **Access control (RFC 4314):** each mailbox may have a hidden `.imap-acl` file, one line per identifier: the identifier, a TAB, its rights (`lrswipkxtea`); a negative entry is `-identifier`. A user is named by the full login address (`bob@bringardner.us`), a group by `$` and its full name (`$sales@bringardner.us`, as the user registry names the user's groups), and `anyone` is every logged in user. A mailbox with no file gives only its owner every right. The owner (the user whose store it is) isn't written in the file unless the owner's own rights are set, so without an entry of its own the owner keeps every right, and users who share one maildrop each keep theirs; the owner always keeps `l` and `a`. Lines starting with `#` are comments, so an identifier can't start with one. The server's permissions are a ceiling: without READ nothing, without WRITE only `l` and `r`. RENAME takes the file along, DELETE removes it, CREATE copies the parent's and gives the creator every right. It is read and written through `MailStore` (`getAcl`, `setRights`, `deleteRights`, `rightsOf`; the format and calculation are `MailboxAcl`), under the user's tree lock, so IMAP and POP3 share it. The maildrop root's hidden `.imap-shares` file (`ShareIndex`) records which owners have given rights to which identifiers, so IMAP's Other Users namespace can find the mailboxes shared with a user; `MailStore` keeps an owner's lines up to date when its ACLs change (`setShareIndex`). An administrator changes them through `MailStoreAdminMXBean`, a running server's `getStoreAdmin()`, which whoever runs the server registers as `us.bringardner.parley:type=MailStore,name=<id>` while it runs (a server's own `main` does), so the changes take that server's locks on the store; its `forgetUser` takes a deleted user out of the other users' ACLs and the share index.
 - **Index:** each mailbox has a hidden `.imap-index` file holding UIDVALIDITY, UIDNEXT, and each message's UID, flags and INTERNALDATE. It is replaced safely (temp file, then rename). UIDs are never reused. Message files themselves are never modified, except for the next point.
 - **Line ends:** a message file found with bare LF line ends is rewritten once with CRLF, so the sizes IMAP reports are exact.
 - **Sharing within a server:** sessions in the same process share one `Mailbox` object per directory (`MailboxRegistry`), so changes reach other sessions at once (EXISTS, EXPUNGE and FETCH FLAGS, which include UID). Changes made outside the server, such as POP3 or delivery, are found by rescanning the directory, at most once a second.

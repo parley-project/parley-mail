@@ -24,7 +24,8 @@ import us.bringardner.parley.io.IoUtils;
  * <ul>
  * <li>a user is named by the full login address ({@code bob@bringardner.us});</li>
  * <li>a group by {@code $} and its full name ({@code $sales@bringardner.us}), matching
- * {@link us.bringardner.parley.net.server.IPrincipal#getGroups()};</li>
+ * the names of the user's groups in the server's user registry (parley-net's
+ * {@code FileUserRegistry.findGroups}, say);</li>
  * <li>{@value #ANYONE} is every logged in user.</li>
  * </ul>
  * A mailbox with no file has only its owner's default rights ({@value #ALL}). The owner is
