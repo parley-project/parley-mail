@@ -92,6 +92,16 @@ public final class MailTestSupport {
 			}
 
 			@Override
+			public java.util.Set<ParleyPrincipal> findGroups(ParleyPrincipal principal) throws UserRegistryUnavailableException {
+				throw new UserRegistryUnavailableException(DOWN);
+			}
+
+			@Override
+			public java.util.Set<ParleyPrincipal> findMembers(ParleyPrincipal group) throws UserRegistryUnavailableException {
+				throw new UserRegistryUnavailableException(DOWN);
+			}
+
+			@Override
 			public AuthorizationResult checkPermission(Requester requester, ParleyPermission needed, ProtectedResource resource) {
 				return AuthorizationResult.unavailable(DOWN);
 			}

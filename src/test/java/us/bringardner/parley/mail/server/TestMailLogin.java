@@ -12,6 +12,8 @@ import java.io.IOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import us.bringardner.parley.iam.UserRegistryUnavailableException;
+import us.bringardner.parley.iam.ParleyPrincipal;
 import us.bringardner.parley.iam.AuthenticationResult;
 import us.bringardner.parley.iam.AuthenticationResult.Status;
 import us.bringardner.parley.net.sasl.ISaslChannel;
@@ -196,7 +198,7 @@ public class TestMailLogin {
 		assertEquals(0, session.failed(), "not counted");
 	}
 
-	/** Group names for $group ACL entries come from the registry's findGroups, when it has one. */
+	/** Group names for $group ACL entries come from the registry's findGroups. */
 	@Test
 	public void groupNamesFromTheRegistry() throws IOException {
 		FileUserRegistry users = new FileUserRegistry() {
@@ -211,9 +213,15 @@ public class TestMailLogin {
 		assertTrue(server.findGroupNames(users.findPrincipal("dave")).isEmpty());
 		assertTrue(server.findGroupNames(null).isEmpty());
 
-		// a registry without findGroups: no groups; with no registry: none either
+		// a registry that can't answer says so; with no registry: no groups
 		server.setUserRegistry(MailTestSupport.downAcl());
-		assertTrue(server.findGroupNames(users.findPrincipal("carol")).isEmpty());
+		final ParleyPrincipal carol = users.findPrincipal("carol");
+		assertThrows(UserRegistryUnavailableException.class, new org.junit.jupiter.api.function.Executable() {
+			@Override
+			public void execute() throws Throwable {
+				server.findGroupNames(carol);
+			}
+		});
 		server.setUserRegistry(null);
 		assertTrue(server.findGroupNames(users.findPrincipal("carol")).isEmpty());
 	}

@@ -28,10 +28,9 @@
 - **Tests**: `MailTestSupport.scramAcl()` and `downAcl()` keep their names and return a `UserRegistry` (for
   `setUserRegistry`).
 - **Added `AbstractMailServer.findGroupNames(ParleyPrincipal)`**: the names of a user's groups, for `$group`
-  entries in mailbox ACLs (IMAP, POP3's INBOX). parley-iam's `UserRegistry` has no group lookup, so it calls the
-  registry's own public `findGroups(ParleyPrincipal)` when it has one (FileUserRegistry, BasicUserRegistry,
-  parley-net-acl-jdbc's registry); otherwise no groups. A registry that can't answer throws
-  `UserRegistryUnavailableException`.
+  entries in mailbox ACLs (IMAP, POP3's INBOX), from the user registry's `findGroups` (parley-iam's `UserRegistry`,
+  directly or through other groups); no registry gives no groups. A registry that can't answer throws
+  `UserRegistryUnavailableException`. `MailTestSupport.downAcl()` throws it from `findGroups` and `findMembers` too.
 
 
 ### Changed (2026-11-03: what's left of deployment leaves the framework, To-Do 15.1-15.3)
