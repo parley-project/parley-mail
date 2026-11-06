@@ -196,6 +196,28 @@ public class TestMailLogin {
 		assertEquals(0, session.failed(), "not counted");
 	}
 
+	/** Group names for $group ACL entries come from the registry's findGroups, when it has one. */
+	@Test
+	public void groupNamesFromTheRegistry() throws IOException {
+		FileUserRegistry users = new FileUserRegistry() {
+			{
+				parseLine("carol, pw, READ, groups=sales@x.us;support@x.us");
+				parseLine("dave, pw, READ");
+			}
+		};
+		server.setUserRegistry(users);
+		assertEquals(java.util.List.of("sales@x.us", "support@x.us"),
+				new java.util.ArrayList<>(server.findGroupNames(users.findPrincipal("carol"))));
+		assertTrue(server.findGroupNames(users.findPrincipal("dave")).isEmpty());
+		assertTrue(server.findGroupNames(null).isEmpty());
+
+		// a registry without findGroups: no groups; with no registry: none either
+		server.setUserRegistry(MailTestSupport.downAcl());
+		assertTrue(server.findGroupNames(users.findPrincipal("carol")).isEmpty());
+		server.setUserRegistry(null);
+		assertTrue(server.findGroupNames(users.findPrincipal("carol")).isEmpty());
+	}
+
 	/** Run a SCRAM-SHA-256 exchange between a client and the authenticator. */
 	private static SaslOutcome scram(MailSaslAuthenticator auth, String user, String password) throws IOException {
 		final ISaslClient client = ScramMechanism.SHA_256.client(user, password);

@@ -6,7 +6,9 @@ import us.bringardner.parley.core.ILogger.Level;
 import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
+import us.bringardner.parley.iam.ParleyPrincipal;
 import us.bringardner.parley.iam.UserRegistry;
+import us.bringardner.parley.iam.UserRegistryUnavailableException;
 import us.bringardner.parley.net.server.FileUserRegistry;
 import us.bringardner.parley.net.server.Server;
 
@@ -237,6 +239,52 @@ public abstract class AbstractMailServer extends Server {
 			String setting = getPropertyPrefix() == null ? AUTHENTICATION_PROVIDER_PROPERTY : propertyName(AUTHENTICATION_PROVIDER_PROPERTY);
 			logInfo("No user registry is configured for " + getName() + " (" + setting + " or " + MAIL_USERS_PROP + "); no one can log in");
 		}
+	}
+
+	/**
+	 * The names of a user's groups in the server's user registry, for the {@code $group} entries of
+	 * a mailbox ACL (RFC 4314; group names carry their domain, {@code sales@bringardner.us}).
+	 * <p>
+	 * parley-iam's {@link UserRegistry} has no group lookup. The registries that know groups
+	 * (parley-net's {@link FileUserRegistry}, parley-iam's {@code BasicUserRegistry}, parley-net-acl-jdbc's
+	 * registry) each have a public {@code findGroups(ParleyPrincipal)}, which is called when the
+	 * server's registry has one; otherwise the user is in no groups.
+	 *
+	 * @param principal the user; null gives no groups
+	 * @return the group names, in the registry's order; empty when there is no registry or it has no groups
+	 * @throws UserRegistryUnavailableException when the user registry can't answer now
+	 * @since 2.0.0
+	 */
+	public java.util.Set<String> findGroupNames(ParleyPrincipal principal) throws UserRegistryUnavailableException {
+		java.util.Set<String> ret = new java.util.LinkedHashSet<>();
+		UserRegistry registry = getUserRegistry();
+		if (registry == null || principal == null) {
+			return ret;
+		}
+		Object groups;
+		try {
+			java.lang.reflect.Method m = registry.getClass().getMethod("findGroups", ParleyPrincipal.class);
+			groups = m.invoke(registry, principal);
+		} catch (NoSuchMethodException | IllegalAccessException e) {
+			return ret;
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof UserRegistryUnavailableException) {
+				throw (UserRegistryUnavailableException) cause;
+			}
+			if (cause instanceof RuntimeException) {
+				throw (RuntimeException) cause;
+			}
+			throw new UserRegistryUnavailableException("findGroups failed: " + cause);
+		}
+		if (groups instanceof Iterable) {
+			for (Object g : (Iterable<?>) groups) {
+				if (g instanceof ParleyPrincipal) {
+					ret.add(((ParleyPrincipal) g).getName());
+				}
+			}
+		}
+		return ret;
 	}
 
 	/** The property that sets the maildrop root, for the error message when it is missing. */

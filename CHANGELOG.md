@@ -27,6 +27,11 @@
   `isTooManyLoginFailures()` and override `replyTooManyLoginFailures()` for a goodbye).
 - **Tests**: `MailTestSupport.scramAcl()` and `downAcl()` keep their names and return a `UserRegistry` (for
   `setUserRegistry`).
+- **Added `AbstractMailServer.findGroupNames(ParleyPrincipal)`**: the names of a user's groups, for `$group`
+  entries in mailbox ACLs (IMAP, POP3's INBOX). parley-iam's `UserRegistry` has no group lookup, so it calls the
+  registry's own public `findGroups(ParleyPrincipal)` when it has one (FileUserRegistry, BasicUserRegistry,
+  parley-net-acl-jdbc's registry); otherwise no groups. A registry that can't answer throws
+  `UserRegistryUnavailableException`.
 
 
 ### Changed (2026-11-03: what's left of deployment leaves the framework, To-Do 15.1-15.3)
