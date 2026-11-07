@@ -16,7 +16,7 @@ import us.bringardner.parley.net.sasl.ServerSaslAuthenticator;
  * {@link #verified(String)} logs the session in (the credentials are asked for again; changed
  * meanwhile, the login is refused);</li>
  * <li>text that can't be prepared is refused here, counted like a wrong password
- * ({@link us.bringardner.parley.net.server.ILoginSession#refuseLogin(String)});</li>
+ * ({@link us.bringardner.parley.net.server.LoginSession#refuseLogin(String)});</li>
  * <li>{@link #getResult()} says how the last login ended, including a refusal here.</li>
  * </ul>
  * A protocol's AUTH command runs the whole exchange with
