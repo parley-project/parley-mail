@@ -88,12 +88,20 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 
 	/**
 	 * STARTTLS / STLS: the response has been sent; negotiate TLS. Anything the client sent before TLS
-	 * began is forgotten (RFC 3207, RFC 9051 section 11.1).
+	 * began is forgotten (RFC 3207, RFC 9051 section 11.1). It all happens under the session's
+	 * output lock ({@link #getOutputLock()}), so a goodbye is written on the plain connection before
+	 * the switch or on the TLS one after it, never to a stream being replaced.
 	 */
 	public void startTls() throws IOException {
-		beforeTls();
-		getConnection().negotiateSecureSocket("TLS");
-		afterTls();
+		java.util.concurrent.locks.ReentrantLock lock = getOutputLock();
+		lock.lock();
+		try {
+			beforeTls();
+			getConnection().negotiateSecureSocket("TLS");
+			afterTls();
+		} finally {
+			lock.unlock();
+		}
 	}
 
 	/** Flush output buffered for the plain connection. */
