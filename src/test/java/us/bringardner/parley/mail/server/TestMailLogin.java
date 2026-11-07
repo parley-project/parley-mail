@@ -12,10 +12,11 @@ import java.io.IOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import us.bringardner.parley.iam.UserRegistryUnavailableException;
-import us.bringardner.parley.iam.ParleyPrincipal;
-import us.bringardner.parley.iam.AuthenticationResult;
 import us.bringardner.parley.iam.AuthenticationResult.Status;
+import us.bringardner.parley.iam.AuthenticationResult;
+import us.bringardner.parley.iam.ParleyPrincipal;
+import us.bringardner.parley.iam.UserRegistryUnavailableException;
+import us.bringardner.parley.mail.test.MailTestSupport;
 import us.bringardner.parley.net.sasl.ISaslChannel;
 import us.bringardner.parley.net.sasl.ISaslClient;
 import us.bringardner.parley.net.sasl.PlainMechanism;
@@ -25,7 +26,6 @@ import us.bringardner.parley.net.sasl.SaslOutcome;
 import us.bringardner.parley.net.sasl.SaslServerDriver;
 import us.bringardner.parley.net.sasl.ScramMechanism;
 import us.bringardner.parley.net.server.FileUserRegistry;
-import us.bringardner.parley.mail.test.MailTestSupport;
 
 /**
  * The mail sessions' logins: passwords through the session (SASLprep'd), SASL through
@@ -202,7 +202,7 @@ public class TestMailLogin {
 	@Test
 	public void aMissingPermissionIsReportedAccurately() throws IOException {
 		assertEquals(Status.AUTHENTICATED, session.login("tony", "secret").getStatus());
-		String text = session.reportMissingPermission("RETR", new us.bringardner.parley.iam.BasicParleyPermission("read", null));
+		String text = session.reportMissingPermission("RETR", new us.bringardner.parley.iam.permission.BasicParleyPermission("read", null));
 		assertEquals("tony doesn't have the read permission", text);
 		assertEquals(0, session.failed());
 		assertEquals("tony", session.getPrincipal().getName(), "still logged in");

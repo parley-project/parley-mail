@@ -3,9 +3,9 @@ package us.bringardner.parley.mail.server;
 import java.io.IOException;
 
 import us.bringardner.parley.iam.AuthenticationResult;
-import us.bringardner.parley.iam.PasswordCredential;
-import us.bringardner.parley.iam.ProofCredential;
 import us.bringardner.parley.iam.UserRegistry;
+import us.bringardner.parley.iam.credential.PasswordCredential;
+import us.bringardner.parley.iam.credential.ProofCredential;
 import us.bringardner.parley.net.sasl.SaslPrep;
 import us.bringardner.parley.net.sasl.ScramMechanism;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
