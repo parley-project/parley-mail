@@ -5,18 +5,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 
 import us.bringardner.parley.files.FileSource;
-import us.bringardner.parley.iam.AuthenticationResult;
-import us.bringardner.parley.iam.AuthorizationResult;
-import us.bringardner.parley.iam.Credential;
-import us.bringardner.parley.iam.EntityId;
-import us.bringardner.parley.iam.ParleyPermission;
-import us.bringardner.parley.iam.ParleyPrincipal;
-import us.bringardner.parley.iam.ProtectedResource;
-import us.bringardner.parley.iam.Requester;
-import us.bringardner.parley.iam.StoredCredential;
-import us.bringardner.parley.iam.StoredCredentialType;
 import us.bringardner.parley.iam.UserRegistry;
-import us.bringardner.parley.iam.UserRegistryUnavailableException;
+import us.bringardner.parley.iam.registry.UnavailableUserRegistry;
 import us.bringardner.parley.net.server.FileUserRegistry;
 
 /**
@@ -63,49 +53,7 @@ public final class MailTestSupport {
 	 * @return the registry, for {@code setUserRegistry}
 	 */
 	public static UserRegistry downAcl() {
-		return new UserRegistry() {
-			private static final String DOWN = "the database is down";
-
-			@Override
-			public boolean supports(Class<? extends Credential> kind, StoredCredentialType stored) {
-				return true;
-			}
-
-			@Override
-			public AuthenticationResult authenticate(Credential credential) {
-				return AuthenticationResult.unavailable(DOWN);
-			}
-
-			@Override
-			public StoredCredential findStoredCredential(String user, StoredCredentialType type) throws UserRegistryUnavailableException {
-				throw new UserRegistryUnavailableException(DOWN);
-			}
-
-			@Override
-			public ParleyPrincipal findPrincipal(String name) throws UserRegistryUnavailableException {
-				throw new UserRegistryUnavailableException(DOWN);
-			}
-
-			@Override
-			public ParleyPrincipal findPrincipal(EntityId id) throws UserRegistryUnavailableException {
-				throw new UserRegistryUnavailableException(DOWN);
-			}
-
-			@Override
-			public java.util.Set<ParleyPrincipal> findGroups(ParleyPrincipal principal) throws UserRegistryUnavailableException {
-				throw new UserRegistryUnavailableException(DOWN);
-			}
-
-			@Override
-			public java.util.Set<ParleyPrincipal> findMembers(ParleyPrincipal group) throws UserRegistryUnavailableException {
-				throw new UserRegistryUnavailableException(DOWN);
-			}
-
-			@Override
-			public AuthorizationResult checkPermission(Requester requester, ParleyPermission needed, ProtectedResource resource) {
-				return AuthorizationResult.unavailable(DOWN);
-			}
-		};
+		return new UnavailableUserRegistry("the database is down");
 	}
 
 	/** Delete a file, or a directory and everything in it; nothing for null or a file that isn't there. */
