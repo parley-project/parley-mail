@@ -3,8 +3,6 @@ package us.bringardner.parley.mail.server;
 import java.io.IOException;
 
 import us.bringardner.parley.iam.AuthenticationResult;
-import us.bringardner.parley.iam.ParleyPermission;
-import us.bringardner.parley.iam.ParleyPrincipal;
 import us.bringardner.parley.iam.PasswordCredential;
 import us.bringardner.parley.iam.ProofCredential;
 import us.bringardner.parley.iam.UserRegistry;
@@ -56,29 +54,6 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 		} finally {
 			credential.clear();
 		}
-	}
-
-	/**
-	 * A logged-in user lacks a permission a command needs. That isn't a failed login (the
-	 * password was right): the command is refused, and the administrators are told who, which
-	 * permission, which command and from where, so they can find the problem.
-	 *
-	 * @param command the command refused, for the log
-	 * @param permission the permission it needs
-	 * @param purpose what the permission is for here, in a few words ("reading mail", "sending
-	 * mail"), or null
-	 * @return the text for the reply, e.g. "tony doesn't have the read permission (needed for
-	 * reading mail)"
-	 * @since 2.0.0
-	 */
-	public String permissionMissing(String command, ParleyPermission permission, String purpose) {
-		ParleyPrincipal p = getPrincipal();
-		String who = p == null ? "nobody logged in" : p.getName();
-		String what = (p == null ? "the session doesn't" : who + " doesn't") + " have the " + permission.getName() + " permission"
-				+ (purpose == null ? "" : " (needed for " + purpose + ")");
-		java.net.InetAddress from = getRequester().getClientAddress();
-		logWarn(command + " refused: " + what + "; client " + (from == null ? "unknown" : from.getHostAddress()));
-		return p == null ? "Permission denied" : what;
 	}
 
 	/**

@@ -202,8 +202,8 @@ public class TestMailLogin {
 	@Test
 	public void aMissingPermissionIsReportedAccurately() throws IOException {
 		assertEquals(Status.AUTHENTICATED, session.login("tony", "secret").getStatus());
-		String text = session.permissionMissing("RETR", new us.bringardner.parley.iam.BasicParleyPermission("read", null), "reading mail");
-		assertEquals("tony doesn't have the read permission (needed for reading mail)", text);
+		String text = session.reportMissingPermission("RETR", new us.bringardner.parley.iam.BasicParleyPermission("read", null));
+		assertEquals("tony doesn't have the read permission", text);
 		assertEquals(0, session.failed());
 		assertEquals("tony", session.getPrincipal().getName(), "still logged in");
 	}
