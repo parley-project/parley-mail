@@ -3,13 +3,14 @@ package us.bringardner.parley.mail.server;
 import java.io.IOException;
 
 import us.bringardner.parley.iam.AuthenticationResult;
+import us.bringardner.parley.iam.ParleyPermission;
+import us.bringardner.parley.iam.ParleyPrincipal;
 import us.bringardner.parley.iam.PasswordCredential;
 import us.bringardner.parley.iam.ProofCredential;
 import us.bringardner.parley.iam.UserRegistry;
 import us.bringardner.parley.net.sasl.SaslPrep;
 import us.bringardner.parley.net.sasl.ScramMechanism;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
-import us.bringardner.parley.net.server.LoginFailures;
 import us.bringardner.parley.net.server.Server;
 
 /**
@@ -47,7 +48,7 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 		String preparedPassword = SaslPrep.prepare(password, false);
 		if (preparedUser == null || preparedPassword == null || preparedUser.isEmpty()) {
 			getServer().requireUserRegistry(); // no registry is a mistake in the configuration, not a refusal
-			return refuse("the user name or password can't be prepared (SASLprep)");
+			return refuseLogin("the user name or password can't be prepared (SASLprep)");
 		}
 		PasswordCredential credential = new PasswordCredential(preparedUser, preparedPassword.toCharArray(), getRequester());
 		try {
@@ -58,27 +59,26 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 	}
 
 	/**
-	 * A login refused here, before it reached the user registry (text SASLprep can't prepare, say):
-	 * counted and answered late like any other refused login (parley-net's {@link LoginFailures}).
+	 * A logged-in user lacks a permission a command needs. That isn't a failed login (the
+	 * password was right): the command is refused, and the administrators are told who, which
+	 * permission, which command and from where, so they can find the problem.
 	 *
-	 * @param reason why, for the log
-	 * @return a REFUSED result
+	 * @param command the command refused, for the log
+	 * @param permission the permission it needs
+	 * @param purpose what the permission is for here, in a few words ("reading mail", "sending
+	 * mail"), or null
+	 * @return the text for the reply, e.g. "tony doesn't have the read permission (needed for
+	 * reading mail)"
 	 * @since 2.0.0
 	 */
-	protected AuthenticationResult refuse(String reason) {
-		AuthenticationResult result = AuthenticationResult.refused(reason);
-		LoginFailures failures = getLoginFailures();
-		if (failures != null && failures.record(result)) {
-			int millis = failures.getDelayMillis();
-			if (millis > 0) {
-				try {
-					Thread.sleep(millis);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
-			}
-		}
-		return result;
+	public String permissionMissing(String command, ParleyPermission permission, String purpose) {
+		ParleyPrincipal p = getPrincipal();
+		String who = p == null ? "nobody logged in" : p.getName();
+		String what = (p == null ? "the session doesn't" : who + " doesn't") + " have the " + permission.getName() + " permission"
+				+ (purpose == null ? "" : " (needed for " + purpose + ")");
+		java.net.InetAddress from = getRequester().getClientAddress();
+		logWarn(command + " refused: " + what + "; client " + (from == null ? "unknown" : from.getHostAddress()));
+		return p == null ? "Permission denied" : what;
 	}
 
 	/**
