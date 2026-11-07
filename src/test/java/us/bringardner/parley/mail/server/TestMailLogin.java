@@ -182,9 +182,30 @@ public class TestMailLogin {
 		o = scram(wrong, "carol", "nope");
 		assertFalse(o.isSuccess());
 		assertNull(wrong.getResult(), "the mechanism found it; no login was checked");
-		assertEquals(Status.REFUSED, wrong.exchangeFailed(o.getReason()).getStatus());
+		assertEquals(0, session.failed(), "the driver alone doesn't count it");
+
+		// authenticate() runs the exchange and counts it
+		MailSaslAuthenticator whole = session.newSaslAuthenticator();
+		AuthenticationResult refused = whole.authenticate(ScramMechanism.SHA_256, null, scramChannel(ScramMechanism.SHA_256.client("carol", "nope")));
+		assertEquals(Status.REFUSED, refused.getStatus());
 		assertEquals(1, session.failed(), "counted");
-		assertEquals(Status.REFUSED, wrong.getResult().getStatus());
+
+		// and logs in with verified() after a good one
+		whole = session.newSaslAuthenticator();
+		ISaslClient good = ScramMechanism.SHA_256.client("carol", "carolpw");
+		AuthenticationResult in = whole.authenticate(ScramMechanism.SHA_256, SaslEncoding.encode(good.initialResponse()), scramChannel(good));
+		assertEquals(Status.AUTHENTICATED, in.getStatus(), in.getReason());
+		assertEquals("carol", session.getPrincipal().getName());
+	}
+
+	/** A missing permission isn't a failed login: the reply says which permission, and isn't counted. */
+	@Test
+	public void aMissingPermissionIsReportedAccurately() throws IOException {
+		assertEquals(Status.AUTHENTICATED, session.login("tony", "secret").getStatus());
+		String text = session.reportMissingPermission("RETR", new us.bringardner.parley.iam.BasicParleyPermission("read", null));
+		assertEquals("tony doesn't have the read permission", text);
+		assertEquals(0, session.failed());
+		assertEquals("tony", session.getPrincipal().getName(), "still logged in");
 	}
 
 	@Test
@@ -194,7 +215,9 @@ public class TestMailLogin {
 		SaslOutcome o = scram(auth, "carol", "carolpw");
 		assertFalse(o.isSuccess());
 		assertTrue(auth.isUnavailable());
-		assertEquals(Status.UNAVAILABLE, auth.exchangeFailed(o.getReason()).getStatus());
+		MailSaslAuthenticator whole = session.newSaslAuthenticator();
+		AuthenticationResult r = whole.authenticate(ScramMechanism.SHA_256, null, scramChannel(ScramMechanism.SHA_256.client("carol", "carolpw")));
+		assertEquals(Status.UNAVAILABLE, r.getStatus());
 		assertEquals(0, session.failed(), "not counted");
 	}
 
@@ -250,5 +273,33 @@ public class TestMailLogin {
 		SaslOutcome o = SaslServerDriver.authenticate(ScramMechanism.SHA_256, auth, ir, channel);
 		assertNotNull(o);
 		return o;
+	}
+
+	/** A channel to an in-process SCRAM client; the first challenge is answered with the client's first message. */
+	private static ISaslChannel scramChannel(final ISaslClient client) {
+		final String[] next = new String[1];
+		final boolean[] started = new boolean[1];
+		return new ISaslChannel() {
+			@Override
+			public void sendChallenge(String base64) throws IOException {
+				try {
+					byte[] answer;
+					if (!started[0] && base64.isEmpty()) {
+						answer = client.initialResponse();
+					} else {
+						answer = client.evaluateChallenge(SaslEncoding.decode(base64));
+					}
+					started[0] = true;
+					next[0] = SaslEncoding.encode(answer == null ? new byte[0] : answer);
+				} catch (SaslException e) {
+					next[0] = "*";
+				}
+			}
+
+			@Override
+			public String readResponse() {
+				return next[0];
+			}
+		};
 	}
 }

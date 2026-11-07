@@ -15,12 +15,14 @@ import us.bringardner.parley.net.sasl.ServerSaslAuthenticator;
  * <li>SCRAM's credentials are looked up under the prepared name, and after the exchange succeeds
  * {@link #verified(String)} logs the session in (the credentials are asked for again; changed
  * meanwhile, the login is refused);</li>
- * <li>{@link #getResult()} says how the last login ended; {@link #isUnavailable()} is true when the
- * user registry couldn't answer (a temporary failure, not a wrong password);</li>
- * <li>an exchange that failed without a login check (a wrong SCRAM proof) is counted as a refused
- * login with {@link #exchangeFailed(String)}.</li>
+ * <li>text that can't be prepared is refused here, counted like a wrong password
+ * ({@link us.bringardner.parley.net.server.ILoginSession#refuseLogin(String)});</li>
+ * <li>{@link #getResult()} says how the last login ended, including a refusal here.</li>
  * </ul>
- * One per AUTH command ({@link AbstractMailProcessor#newSaslAuthenticator()}).
+ * A protocol's AUTH command runs the whole exchange with
+ * {@link #authenticate(us.bringardner.parley.net.sasl.ISaslMechanism, String, us.bringardner.parley.net.sasl.ISaslChannel)},
+ * which also counts a wrong SCRAM proof. One per AUTH command
+ * ({@link AbstractMailProcessor#newSaslAuthenticator()}).
  *
  * @since 2.0.0
  */
@@ -42,7 +44,8 @@ public class MailSaslAuthenticator extends ServerSaslAuthenticator {
 		String u = SaslPrep.prepare(user, false);
 		String p = SaslPrep.prepare(password, false);
 		if (u == null || p == null || u.isEmpty()) {
-			refusedHere = session.authenticate(user, password); // refused and counted there
+			session.getServer().requireUserRegistry(); // no registry is a mistake in the configuration, not a refusal
+			refusedHere = session.refuseLogin("the user name or password can't be prepared (SASLprep)");
 			return false;
 		}
 		refusedHere = null;
@@ -64,35 +67,12 @@ public class MailSaslAuthenticator extends ServerSaslAuthenticator {
 	public AuthenticationResult verified(String user) {
 		String u = SaslPrep.prepare(user, false);
 		if (u == null || u.isEmpty()) {
-			AuthenticationResult r = session.refuse("the user name can't be prepared (SASLprep)");
+			AuthenticationResult r = session.refuseLogin("the user name can't be prepared (SASLprep)");
 			refusedHere = r;
 			return r;
 		}
 		refusedHere = null;
 		return super.verified(u);
-	}
-
-	/**
-	 * The exchange failed (the outcome wasn't a success): how the login ended. When no login was
-	 * checked during it (a wrong SCRAM proof is found by the mechanism itself), it is counted here as
-	 * a refused login, so password guessing over SCRAM is limited like any other; when the user
-	 * registry couldn't answer, it is UNAVAILABLE and not counted.
-	 *
-	 * @param reason why, for the log
-	 * @return REFUSED or UNAVAILABLE (or the result of the login that was checked)
-	 */
-	public AuthenticationResult exchangeFailed(String reason) {
-		AuthenticationResult r = getResult();
-		if (r != null) {
-			return r;
-		}
-		if (isUnavailable()) {
-			r = AuthenticationResult.unavailable("the user registry can't answer now");
-		} else {
-			r = session.refuse(reason);
-		}
-		refusedHere = r;
-		return r;
 	}
 
 	@Override

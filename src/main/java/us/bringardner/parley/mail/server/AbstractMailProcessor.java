@@ -9,7 +9,6 @@ import us.bringardner.parley.iam.UserRegistry;
 import us.bringardner.parley.net.sasl.SaslPrep;
 import us.bringardner.parley.net.sasl.ScramMechanism;
 import us.bringardner.parley.net.server.AbstractCommandProcessor;
-import us.bringardner.parley.net.server.LoginFailures;
 import us.bringardner.parley.net.server.Server;
 
 /**
@@ -47,7 +46,7 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 		String preparedPassword = SaslPrep.prepare(password, false);
 		if (preparedUser == null || preparedPassword == null || preparedUser.isEmpty()) {
 			getServer().requireUserRegistry(); // no registry is a mistake in the configuration, not a refusal
-			return refuse("the user name or password can't be prepared (SASLprep)");
+			return refuseLogin("the user name or password can't be prepared (SASLprep)");
 		}
 		PasswordCredential credential = new PasswordCredential(preparedUser, preparedPassword.toCharArray(), getRequester());
 		try {
@@ -55,30 +54,6 @@ public abstract class AbstractMailProcessor extends AbstractCommandProcessor {
 		} finally {
 			credential.clear();
 		}
-	}
-
-	/**
-	 * A login refused here, before it reached the user registry (text SASLprep can't prepare, say):
-	 * counted and answered late like any other refused login (parley-net's {@link LoginFailures}).
-	 *
-	 * @param reason why, for the log
-	 * @return a REFUSED result
-	 * @since 2.0.0
-	 */
-	protected AuthenticationResult refuse(String reason) {
-		AuthenticationResult result = AuthenticationResult.refused(reason);
-		LoginFailures failures = getLoginFailures();
-		if (failures != null && failures.record(result)) {
-			int millis = failures.getDelayMillis();
-			if (millis > 0) {
-				try {
-					Thread.sleep(millis);
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
-			}
-		}
-		return result;
 	}
 
 	/**
