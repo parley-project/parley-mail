@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.net.lock.Sharing;
 import us.bringardner.parley.net.lock.StoreClaimException;
 import us.bringardner.parley.iam.UserRegistry;
@@ -72,7 +73,7 @@ public class TestSharedSettings {
 		assertNotNull(acl);
 		assertNotNull(acl.findPrincipal("tony"));
 		assertNotSame(acl, b.getUserRegistry(), "a registry of its own");
-		assertEquals(users.getCanonicalFile(), a.getUsersFile(), "the file it read, for an application that shares one list");
+		assertEquals(FileSource.of(users.getCanonicalFile()), a.getUsersFile(), "the file it read, for an application that shares one list");
 
 		// an application running both gives them one registry
 		b.setUserRegistry(acl);
