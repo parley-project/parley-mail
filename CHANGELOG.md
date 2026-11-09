@@ -2,6 +2,11 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-08: logging through ILogger, To-Do 19.1 and 19.2)
+
+- **Logging goes through parley-core's ILogger**: `MailStore` is a `BaseObject` now and no longer logs
+  through System.Logger.
+
 ### Changed (2026-11-06: users and logins come from parley-iam)
 
 - **parley-mail uses parley-iam and the new parley-net**: the mail servers' user registry (a parley-iam

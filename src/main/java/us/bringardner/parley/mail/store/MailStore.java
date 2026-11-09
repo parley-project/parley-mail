@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import us.bringardner.parley.core.BaseObject;
 import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.net.lock.LockDomain;
 import us.bringardner.parley.net.lock.Mode;
@@ -39,7 +40,7 @@ import us.bringardner.parley.net.lock.NamedLock;
  * (RFC 4314): RENAME takes it along, DELETE removes it and CREATE copies the parent's
  * ({@link #create(String, String, String)}).
  */
-public final class MailStore {
+public final class MailStore extends BaseObject {
 
 	public static final String MAILBOXES = ".mailboxes";
 	public static final String SUBSCRIPTIONS = ".imap-subscriptions";
@@ -136,8 +137,7 @@ public final class MailStore {
 			s.update(owner, ids);
 		} catch (IOException e) {
 			// the ACL is changed already; the index is a hint for LIST, made right at the next change
-			System.getLogger(MailStore.class.getName()).log(System.Logger.Level.WARNING,
-					"Can't update the share index for " + owner + ": " + e.getMessage());
+			logWarn("Can't update the share index for " + owner + ": " + e.getMessage());
 		}
 	}
 
