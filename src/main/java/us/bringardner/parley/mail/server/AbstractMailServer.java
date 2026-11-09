@@ -31,7 +31,8 @@ public abstract class AbstractMailServer extends Server {
 	/**
 	 * The user file (parley-net's {@link FileUserRegistry} format) every mail server uses when it
 	 * has no user registry of its own (no {@code <prefix>.authenticationProvider}), read again when
-	 * the file changes. Each server reads it into a registry of its own; an application running
+	 * the file changes. The value is a path on the default file system or a {@code filesource:} URL
+	 * ({@link FileSource#of(String)}). Each server reads it into a registry of its own; an application running
 	 * several servers can give them one registry instead ({@link #getUsersFile()},
 	 * {@link #setUserRegistry}).
 	 */
@@ -45,7 +46,7 @@ public abstract class AbstractMailServer extends Server {
 
 	private FileSource maildropRoot;
 	/** The users file this server's registry was read from ({@link #MAIL_USERS_PROP}), or null */
-	private volatile java.io.File usersFile;
+	private volatile FileSource usersFile;
 	/** what {@link #useSharedSettings()} set */
 	private boolean sharedSettingsUsed;
 	/** The registry this server made from {@link #MAIL_USERS_PROP}, or null: its own, closed when replaced */
@@ -80,13 +81,14 @@ public abstract class AbstractMailServer extends Server {
 		String users = getProperty(MAIL_USERS_PROP);
 		if (users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
 			try {
-				java.io.File file = new java.io.File(users.trim()).getCanonicalFile();
+				// a path on the default file system, or a filesource: URL
+				FileSource file = FileSource.of(users.trim()).getCanonicalFile();
 				UserRegistry registry = users(file);
 				setUserRegistry(registry);
 				usersFile = file;
 				sharedUsers = registry;
 			} catch (IOException e) {
-				throw new java.io.UncheckedIOException("Can't read the users file " + users + " (" + MAIL_USERS_PROP + ")", e);
+				throw new java.io.UncheckedIOException("Can't read the users file " + us.bringardner.parley.files.FileSourceFactory.safe(users.trim()) + " (" + MAIL_USERS_PROP + ")", e);
 			}
 		}
 		String keyStore = getProperty(MAIL_TLS_KEY_STORE_PROP);
@@ -126,7 +128,7 @@ public abstract class AbstractMailServer extends Server {
 		}
 	}
 
-	private static FileUserRegistry users(java.io.File file) throws IOException {
+	private static FileUserRegistry users(FileSource file) throws IOException {
 		FileUserRegistry registry = new FileUserRegistry();
 		registry.initialize(file);
 		return registry;
@@ -146,7 +148,7 @@ public abstract class AbstractMailServer extends Server {
 	 * file can give them one registry instead, with {@link #setUserRegistry} before they start.
 	 * @since 2.0.0
 	 */
-	public java.io.File getUsersFile() {
+	public FileSource getUsersFile() {
 		return usersFile;
 	}
 
