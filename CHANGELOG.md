@@ -2,6 +2,12 @@
 
 ## parley-mail 2.0.0 (unreleased)
 
+### Changed (2026-11-10: logging through System.Logger, To-Do 19.5)
+
+- **Logging through `System.Logger`** (parley-core): levels are set per object with `setLogLevel`.
+  `AbstractMailServer.finishInit()`, which set INFO on the server, is removed: the mail servers follow
+  `parley.log.level` or the installed `System.Logger` (java.util.logging shows INFO and up by default).
+
 ### Changed (2026-11-08: logging through ILogger, To-Do 19.1 and 19.2)
 
 - **Logging goes through parley-core's ILogger**: `MailStore` is a `BaseObject` now and no longer logs
