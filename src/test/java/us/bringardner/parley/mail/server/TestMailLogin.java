@@ -37,7 +37,6 @@ public class TestMailLogin {
 	static class Plain extends AbstractMailServer {
 		Plain() {
 			super(0, "Plain", "parley.mail.logintest", false);
-			finishInit();
 		}
 
 		@Override

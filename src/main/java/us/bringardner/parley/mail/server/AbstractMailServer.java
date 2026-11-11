@@ -2,7 +2,6 @@ package us.bringardner.parley.mail.server;
 
 import java.io.IOException;
 
-import us.bringardner.parley.core.ILogger.Level;
 import us.bringardner.parley.files.FileSource;
 import us.bringardner.parley.mail.store.MaildropRoot;
 import us.bringardner.parley.files.FileSourceFactory;
@@ -172,11 +171,6 @@ public abstract class AbstractMailServer extends Server {
 			hint = "; the server that has it doesn't share it";
 		}
 		return new IOException(e.getMessage() + hint, e);
-	}
-
-	/** Called by a subclass's constructor once it has finished its own set up. */
-	protected final void finishInit() {
-		getLogger().setLevel(Level.INFO);
 	}
 
 	/**
