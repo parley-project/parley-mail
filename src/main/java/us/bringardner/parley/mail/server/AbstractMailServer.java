@@ -108,7 +108,7 @@ public abstract class AbstractMailServer extends Server {
 	 * chosen again.
 	 */
 	@Override
-	protected void setPropertyPrefix(String propertyPrefix) {
+	public void setPropertyPrefix(String propertyPrefix) {
 		super.setPropertyPrefix(propertyPrefix);
 		if (sharedSettingsUsed) {
 			UserRegistry made = sharedUsers;
