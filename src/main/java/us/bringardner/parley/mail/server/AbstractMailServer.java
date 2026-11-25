@@ -110,6 +110,31 @@ public abstract class AbstractMailServer extends Server {
 	@Override
 	public void setPropertyPrefix(String propertyPrefix) {
 		super.setPropertyPrefix(propertyPrefix);
+		chooseSharedSettingsAgain();
+	}
+
+	/** The settings file is read when the server starts: what was taken from the settings before is taken again. */
+	@Override
+	protected void settingsRead(boolean fromFile) throws IOException {
+		if (fromFile) {
+			chooseSharedSettingsAgain();
+		}
+	}
+
+	/** A server with implicit TLS needs a key store: the suite's or its own */
+	@Override
+	protected void checkSettings(java.util.List<String> problems) {
+		super.checkSettings(problems);
+		if (isSecure()) {
+			String own = getKeyStoreFileName();
+			if (own == null || own.trim().isEmpty()) {
+				problems.add("implicit TLS needs a key store: set " + MAIL_TLS_KEY_STORE_PROP + " (for every mail server) or "
+						+ propertyName(PROPERTY_KEY_STORE_NAME) + " (for this one)");
+			}
+		}
+	}
+
+	private void chooseSharedSettingsAgain() {
 		if (sharedSettingsUsed) {
 			UserRegistry made = sharedUsers;
 			if (made != null) {
