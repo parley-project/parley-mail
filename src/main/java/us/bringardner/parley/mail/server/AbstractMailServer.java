@@ -113,6 +113,12 @@ public abstract class AbstractMailServer extends Server {
 		chooseSharedSettingsAgain();
 	}
 
+	/** The suite's shared settings (the mail root, the users, the TLS key store ...), read before the server's own file */
+	@Override
+	protected String getSharedSettingsFileName() {
+		return "parley-mail.properties";
+	}
+
 	/** The settings file is read when the server starts: what was taken from the settings before is taken again. */
 	@Override
 	protected void settingsRead(boolean fromFile) throws IOException {
