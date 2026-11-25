@@ -25,9 +25,28 @@ import us.bringardner.parley.files.FileSource;
  */
 public class TestMaildropRoot {
 
+	/** The system properties a test set with setSystem, cleared after it */
+	private static final java.util.Set<String> SET_HERE = new java.util.HashSet<>();
+
+	private static void setSystem(java.util.Properties settings) {
+		for (String n : settings.stringPropertyNames()) {
+			System.setProperty(n, settings.getProperty(n));
+			SET_HERE.add(n);
+		}
+	}
+
+	public void clearSystem() {
+		for (String n : SET_HERE) {
+			System.clearProperty(n);
+		}
+		SET_HERE.clear();
+	}
+
+
 	@AfterEach
 	public void close() {
 		RecordingFileSourceFactory.last = null;
+		clearSystem();
 	}
 
 	private TestSharedSettings.Plain server(String... settings) throws Exception {
@@ -35,7 +54,8 @@ public class TestMaildropRoot {
 		for (int i = 0; i < settings.length; i += 2) {
 			c.setProperty(settings[i], settings[i + 1]);
 		}
-		TestSharedSettings.Plain p = us.bringardner.parley.core.BaseObject.makeWith(c, () -> new TestSharedSettings.Plain("parley.mail.a"));
+		setSystem(c);
+		TestSharedSettings.Plain p = new TestSharedSettings.Plain("parley.mail.a");
 		p.initMaildropRoot(AbstractMailServer.MAIL_FILE_SOURCE_PROP, null, AbstractMailServer.MAIL_ROOT_PROP, null, null, null);
 		return p;
 	}

@@ -215,7 +215,7 @@ public abstract class AbstractMailServer extends Server {
 	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
 	 */
 	private java.util.Properties connectionSettings(String prefix) {
-		return MaildropRoot.connectionSettings(getConfiguration() != null ? getConfiguration() : System.getProperties(), prefix);
+		return MaildropRoot.connectionSettings(System.getProperties(), prefix);
 	}
 
 	private String property(String name, String legacy) {

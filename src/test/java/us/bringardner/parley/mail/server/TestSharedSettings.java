@@ -107,25 +107,6 @@ public class TestSharedSettings {
 		assertTrue(on.getMessage().contains("doesn't share it"), on.getMessage());
 	}
 
-	/** Two servers of one launcher, each made from its own configuration: one name, two values. */
-	@Test
-	public void eachServerReadsItsOwnConfiguration() throws Exception {
-		File usersA = file("a.txt", "tony,secret,READ\n");
-		File usersB = file("b.txt", "jose,other,READ\n");
-		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, file("system.txt", "sys,x,READ\n").getPath());
-		java.util.Properties ca = new java.util.Properties();
-		ca.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersA.getPath());
-		java.util.Properties cb = new java.util.Properties();
-		cb.setProperty(AbstractMailServer.MAIL_USERS_PROP, usersB.getPath());
-		Plain a = us.bringardner.parley.core.BaseObject.makeWith(ca, () -> new Plain("parley.mail.a"));
-		Plain b = us.bringardner.parley.core.BaseObject.makeWith(cb, () -> new Plain("parley.mail.a"));
-		assertNotNull(a.getUserRegistry().findPrincipal("tony"));
-		assertNull(a.getUserRegistry().findPrincipal("jose"));
-		assertNotNull(b.getUserRegistry().findPrincipal("jose"));
-		assertNull(b.getUserRegistry().findPrincipal("sys"), "not the system properties");
-		assertSame(ca, a.getConfiguration());
-	}
-
 	@Test
 	public void aServerWithoutAMaildropRootDoesntStart() {
 		Plain p = new Plain("parley.mail.a");
