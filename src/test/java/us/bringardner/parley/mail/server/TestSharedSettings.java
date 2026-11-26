@@ -158,4 +158,23 @@ public class TestSharedSettings {
 		second.start(); // and the store is free
 		second.stop();
 	}
+
+	@Test
+	public void theFileSystemsConnectionSettingsComeFromTheFilesTheServerRead() throws Exception {
+		File config = file("plain.properties", "parley.mail.fileSource.url=jdbc:mysql://db/store\n"
+				+ "parley.mail.fileSource.user=fromFile\n");
+		System.setProperty("parley.mail.plain.configFile", config.getPath());
+		System.setProperty("parley.mail.fileSource.user", "fromSystem");
+		try {
+			Plain p = new Plain("parley.mail.plain");
+			p.prepareToStart();
+			java.util.Properties c = p.connectionSettings("parley.mail.fileSource.");
+			assertEquals("jdbc:mysql://db/store", c.getProperty("url"), "from the file");
+			assertEquals("fromSystem", c.getProperty("user"), "a -D setting wins");
+		} finally {
+			System.clearProperty("parley.mail.plain.configFile");
+			System.clearProperty("parley.mail.fileSource.user");
+			us.bringardner.parley.core.BaseObject.clearSettings();
+		}
+	}
 }

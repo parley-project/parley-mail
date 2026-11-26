@@ -260,8 +260,20 @@ public abstract class AbstractMailServer extends Server {
 	 * configuration ({@code parley.mail.fileSource.url} gives the connection key {@code url}). A
 	 * secret is a reference ({@code @file:...}, {@code @keychain:...}), never the secret itself.
 	 */
-	private java.util.Properties connectionSettings(String prefix) {
-		return MaildropRoot.connectionSettings(System.getProperties(), prefix);
+	protected java.util.Properties connectionSettings(String prefix) {
+		java.util.Properties all = new java.util.Properties();
+		all.putAll(readSettings);
+		all.putAll(System.getProperties()); // (a -D setting wins over a file)
+		return MaildropRoot.connectionSettings(all, prefix);
+	}
+
+	/** Every setting of the files this server read (the shared one and its own), for the file system's connection settings */
+	private final java.util.Properties readSettings = new java.util.Properties();
+
+	@Override
+	protected void settingsFileRead(us.bringardner.parley.core.SettingsFile found) {
+		super.settingsFileRead(found);
+		readSettings.putAll(found.getProperties());
 	}
 
 	private String property(String name, String legacy) {
@@ -407,6 +419,7 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	@Override
 	protected Throwable prepareToStart() {
+		readSettings.clear(); // (read again with the files)
 		Throwable ret = super.prepareToStart();
 		if (ret != null) {
 			return ret;
