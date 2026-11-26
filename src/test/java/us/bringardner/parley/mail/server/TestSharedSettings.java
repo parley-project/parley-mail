@@ -79,6 +79,26 @@ public class TestSharedSettings {
 		assertSame(acl, b.getUserRegistry());
 	}
 
+	/** A registry the application gave is final: the users file a setting names, read when the server starts, doesn't replace it */
+	@Test
+	public void aRegistryTheApplicationGaveIsNotReplacedByTheSettings() throws Exception {
+		File users = file("users.txt", "tony,secret,READ|WRITE\n");
+		FileUserRegistry given = new FileUserRegistry();
+		given.initialize(FileSource.of(file("given.txt", "jose,other,READ\n").getCanonicalFile()));
+		try {
+			Plain a = new Plain("parley.mail.a");
+			a.setUserRegistry(given);
+			System.setProperty(AbstractMailServer.MAIL_USERS_PROP, users.getPath());
+			a.prefix("parley.mail.b"); // the shared settings are chosen again
+			assertSame(given, a.getUserRegistry(), "a new prefix doesn't replace it");
+			a.settingsRead(true); // the start has read the settings file
+			assertSame(given, a.getUserRegistry(), "the users setting doesn't replace it");
+			assertNull(a.getUsersFile());
+		} finally {
+			given.close();
+		}
+	}
+
 	@Test
 	public void aServerWithItsOwnUsersKeepsThemAlsoAfterItsPrefixChanges() throws Exception {
 		System.setProperty(AbstractMailServer.MAIL_USERS_PROP, file("users.txt", "tony,secret,READ\n").getPath());

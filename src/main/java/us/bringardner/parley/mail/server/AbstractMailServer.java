@@ -50,6 +50,8 @@ public abstract class AbstractMailServer extends Server {
 	private boolean sharedSettingsUsed;
 	/** The registry this server made from {@link #MAIL_USERS_PROP}, or null: its own, closed when replaced */
 	private UserRegistry sharedUsers;
+	/** True when the application gave this server its registry (not one it made from a setting): the settings don't replace it */
+	private volatile boolean registryGiven;
 	private boolean sharedKeyStore;
 	private FileSourceFactory factory = FileSourceFactory.getDefaultFactory();
 	private volatile int autologout;
@@ -78,14 +80,14 @@ public abstract class AbstractMailServer extends Server {
 		sharedKeyStore = false;
 		usersFile = null;
 		String users = getProperty(MAIL_USERS_PROP);
-		if (users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
+		if (!registryGiven && users != null && !users.trim().isEmpty() && getProperty(propertyName(AUTHENTICATION_PROVIDER_PROPERTY)) == null) {
 			try {
 				// a path on the default file system, or a filesource: URL
 				FileSource file = FileSource.of(users.trim()).getCanonicalFile();
 				UserRegistry registry = users(file);
+				sharedUsers = registry; // (before it is set: it isn't one the application gave)
 				setUserRegistry(registry);
 				usersFile = file;
-				sharedUsers = registry;
 			} catch (IOException e) {
 				throw new java.io.UncheckedIOException("Can't read the users file " + us.bringardner.parley.files.FileSourceFactory.safe(users.trim()) + " (" + MAIL_USERS_PROP + ")", e);
 			}
@@ -113,6 +115,16 @@ public abstract class AbstractMailServer extends Server {
 		chooseSharedSettingsAgain();
 	}
 
+	/**
+	 * Use this registry. One an application gives a server is final: the settings (the users file, read when the
+	 * server starts or its prefix changes) never replace it, and the server never closes it.
+	 */
+	@Override
+	public void setUserRegistry(UserRegistry registry) {
+		super.setUserRegistry(registry);
+		registryGiven = registry != null && registry != sharedUsers;
+	}
+
 	/** The suite's shared settings (the mail root, the users, the TLS key store ...), read before the server's own file */
 	@Override
 	protected String getSharedSettingsFileName() {
@@ -131,6 +143,9 @@ public abstract class AbstractMailServer extends Server {
 	@Override
 	protected void checkSettings(java.util.List<String> problems) {
 		super.checkSettings(problems);
+		if (maildropRoot == null) {
+			problems.add(rootError != null ? rootError : "The maildrop root is not configured (" + getRootProperty() + ")");
+		}
 		if (isSecure()) {
 			String own = getKeyStoreFileName();
 			if (own == null || own.trim().isEmpty()) {
@@ -359,12 +374,43 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	@Override
 	public synchronized void start() {
-		if (maildropRoot == null) {
-			IOException err = new IOException(rootError != null ? rootError : "The maildrop root is not configured (" + getRootProperty() + ")");
-			logError("Can't start " + getName() + ": " + err.getMessage(), err);
-			throw new java.io.UncheckedIOException(err);
+		boolean started = false;
+		try {
+			super.start(); // prepares (the settings, then the store claim) and starts
+			Throwable err = getStartupError();
+			if (err != null) {
+				throw err instanceof IOException ? new java.io.UncheckedIOException((IOException) err)
+						: new java.io.UncheckedIOException(new IOException(err.getMessage() != null ? err.getMessage() : err.toString(), err));
+			}
+			started = true;
+			makeStoreAdmin();
+		} catch (java.io.UncheckedIOException e) {
+			logError("Can't start " + getName() + ": " + e.getCause().getMessage(), e.getCause());
+			throw e;
+		} finally {
+			if (!started) {
+				if (prepared) {
+					prepared = false;
+					releasingStore();
+				}
+				releaseStoreClaim(); // couldn't start (the port is taken, say): don't keep the store
+			}
 		}
-		boolean claimed = false;
+	}
+
+	/** True once the store is claimed and {@link #storeClaimed()} ran, until it is given up again */
+	private volatile boolean prepared;
+
+	/**
+	 * The settings first (see {@link #checkSettings}), then the claim of the store, with {@link #storeClaimed()}:
+	 * a server never claims a store its settings don't allow it.
+	 */
+	@Override
+	protected Throwable prepareToStart() {
+		Throwable ret = super.prepareToStart();
+		if (ret != null) {
+			return ret;
+		}
 		if (storeClaim == null) {
 			us.bringardner.parley.net.lock.Sharing sharing = null;
 			try {
@@ -374,45 +420,30 @@ public abstract class AbstractMailServer extends Server {
 				// a server on a port the system picks (0) has no port yet: its default id is its own
 				String name = getPort() > 0 ? getName() : getName() + "-" + Integer.toHexString(System.identityHashCode(this));
 				storeClaim = lockDomain.claimStore(us.bringardner.parley.mail.store.MailLocks.serverId(id, name, getPort()));
-				claimed = true;
 			} catch (IOException | RuntimeException e) {
 				releaseStoreClaim();
 				IOException err = e instanceof IOException ? withSharingHint((IOException) e, sharing)
 						: new IOException(e.getMessage() != null ? e.getMessage() : e.toString(), e);
 				logError("Can't start " + getName() + ": " + err.getMessage(), err);
-				throw new java.io.UncheckedIOException(err);
+				return err;
 			}
 		}
-		boolean started = false;
-		boolean prepared = false;
 		try {
 			storeClaimed();
 			prepared = true;
-			super.start();
-			started = true;
-			makeStoreAdmin();
-		} catch (IOException e) {
+		} catch (IOException | RuntimeException e) {
+			releaseStoreClaim();
 			logError("Can't start " + getName() + ": " + e.getMessage(), e);
-			throw new java.io.UncheckedIOException(e);
-		} catch (java.io.UncheckedIOException e) {
-			logError("Can't start " + getName() + ": " + e.getCause().getMessage(), e.getCause());
-			throw e;
-		} finally {
-			if (!started) {
-				if (prepared) {
-					releasingStore();
-				}
-				if (claimed) {
-					releaseStoreClaim(); // couldn't start (the port is taken, say): don't keep the store
-				}
-			}
+			return e;
 		}
+		return null;
 	}
 
 	@Override
 	public void stop() {
 		storeAdmin = null;
 		super.stop();
+		prepared = false;
 		releasingStore();
 		releaseStoreClaim();
 	}
