@@ -248,7 +248,9 @@ public abstract class AbstractMailServer extends Server {
 			maildropRoot = null;
 			rootError = "Can't open the maildrop root " + MaildropRoot.describe(root, source) + ": "
 					+ (e.getMessage() == null ? e.toString() : e.getMessage());
-			logError(rootError, e);
+			if (preparing) {
+				logError(rootError, e);
+			} // (made before the settings files are read, the root is opened again when the server starts: the error is real only then)
 		}
 	}
 
@@ -269,6 +271,8 @@ public abstract class AbstractMailServer extends Server {
 
 	/** Every setting of the files this server read (the shared one and its own), for the file system's connection settings */
 	private final java.util.Properties readSettings = new java.util.Properties();
+	/** True once the server has started to prepare: its settings files are read, so a root that can't be opened is an error */
+	private volatile boolean preparing;
 
 	@Override
 	protected void settingsFileRead(us.bringardner.parley.core.SettingsFile found) {
@@ -419,6 +423,7 @@ public abstract class AbstractMailServer extends Server {
 	 */
 	@Override
 	protected Throwable prepareToStart() {
+		preparing = true;
 		readSettings.clear(); // (read again with the files)
 		Throwable ret = super.prepareToStart();
 		if (ret != null) {
