@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import us.bringardner.parley.files.FileSource;
+import us.bringardner.parley.logging.testing.ErrorsExpected;
 
 /**
  * How a server finds a mail store that isn't on its own disk, the same for any file system:
@@ -97,6 +98,7 @@ public class TestMaildropRoot {
 		assertTrue(RecordingFileSourceFactory.last.url.getQuery().contains("host=db2.example.test"));
 	}
 
+	@ErrorsExpected
 	@Test
 	public void anUnknownFileSystemStopsTheStartSayingWhy() throws Exception {
 		TestSharedSettings.Plain p = server(AbstractMailServer.MAIL_ROOT_PROP, "/mail", AbstractMailServer.MAIL_FILE_SOURCE_PROP, "nosuch");

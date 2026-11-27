@@ -21,12 +21,14 @@ import us.bringardner.parley.net.lock.Sharing;
 import us.bringardner.parley.net.lock.StoreClaimException;
 import us.bringardner.parley.iam.UserRegistry;
 import us.bringardner.parley.net.server.FileUserRegistry;
+import us.bringardner.parley.logging.testing.ErrorsExpected;
 
 /**
  * The settings the mail servers share: each server reads the users file into a registry of its own (an
  * application may give servers one registry instead), a server with its own registry (for its prefix, also
  * after the prefix changes), and the hints a refused store claim gets.
  */
+@ErrorsExpected
 public class TestSharedSettings {
 
 	/** A mail server that is only made, never started */
